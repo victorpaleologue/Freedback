@@ -19,7 +19,9 @@ green on **native + wasm32**:
 - ✅ Content-addressed dedup id (RFC 8785 JCS + SHA-256)
 - ✅ Self-signed ECDSA P-256 identity (detached ES256 signatures)
 - ✅ Shapes-driven SHACL-Core-subset validation (runs in the browser too)
-- ⏳ Servers (feedback / discovery / collection), clients, widgets, extension —
+- ✅ Storage trait + in-memory and Oxigraph backends (shared conformance suite)
+- ✅ Feedback server (axum): WAP container, paging, `/sync`, dual auth, well-known
+- ⏳ Discovery / collection servers, clients, widgets, extension —
   see [`docs/roadmap.md`](docs/roadmap.md)
 
 ## Quick start

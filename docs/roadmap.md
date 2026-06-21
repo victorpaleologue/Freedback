@@ -22,20 +22,24 @@ shapes-driven SHACL validation. Compiles native **and** wasm32.
 - **Acceptance:** dual-target build green; signing tamper-rejected; dedup id
   stable & content-sensitive; SHACL rejects out-of-bounds bodies. ✅
 
-### M2 — storage trait + mocks (in progress)
+### M2 — storage trait + mocks ✅ (memory + Oxigraph; SQLite pending)
 `FeedbackStore` trait; in-memory mock (fast tests); Oxigraph impl (primary,
 in-memory backend); optional SQLite. Put/query/dedup/sync semantics.
 - **Depends on:** M1
 - **Acceptance:** put is idempotent by dedup id; `query` pages; `sync(gt_iat)`
-  returns strictly newer; `latest_edits_only` collapses per (issuer, target).
+  returns strictly newer; `latest_edits_only` collapses per (issuer, target). ✅
+  (shared `conformance::run` suite; both backends green. SQLite mock deferred.)
 
-### M3 — feedback-server (axum) [#component-1]
-POST-to-container (WAP), paginated reads (`OrderedCollectionPage` + `Link`
-rels), `/sync` cursor, dual auth (JWS + OAuth), `/.well-known/freedback`,
-SHACL-reject → 422 with report.
+### M3 — feedback-server (axum) ✅ [#component-1]
+POST-to-container (WAP), paginated reads (`AnnotationPage` + `Link` rels),
+`/sync` cursor, dual auth (JWS + OAuth), `/.well-known/freedback`, SHACL-reject
+→ 422 with report.
 - **Depends on:** M2
-- **Acceptance:** W3C container/paging conformance for implemented features;
-  signed-payload tamper rejected; identical re-POST idempotent.
+- **Acceptance:** signed-payload tamper rejected (401); SHACL-invalid → 422 +
+  report; identical re-POST idempotent; OAuth bearer stamps app-scoped creator;
+  paging emits `Link rel=canonical/type/next/prev` + `ETag`. ✅ (7 in-process
+  integration tests). Remaining: full W3C container conformance suite, batch
+  partial-failure semantics, `PUT /submit/{jwt}` export ingest.
 
 ### M4 — cli-client (native + wasm) [#component-4]
 `read` / `write` / `sync`; distinguish collection points (read aggregates) from

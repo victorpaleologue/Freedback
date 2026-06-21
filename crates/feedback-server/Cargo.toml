@@ -1,0 +1,35 @@
+[package]
+name = "freedback-feedback-server"
+description = "Freedback feedback server: WAP container, paging, /sync cursor, dual auth, /.well-known."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "freedback_feedback_server"
+
+[[bin]]
+name = "freedback-feedback-server"
+path = "src/main.rs"
+
+[dependencies]
+freedback-protocol = { path = "../protocol-lib" }
+freedback-storage = { path = "../storage" }
+axum = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+http-body-util = "0.1"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
