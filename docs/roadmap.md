@@ -27,6 +27,7 @@ so this table (and a comment on each GitHub issue) is the traceability record.
 | M5 discovery-server | #6 | `347073b` | closed ✅ (NIP-65 resolver deferred) |
 | M6 collection-server | #7 | `dd997ad` | closed ✅ (Cache-Control honoring deferred) |
 | M7 advanced-client | #8 | `1a70947` | closed ✅ (negentropy deferred) |
+| M9 equivalence prompt | #10 | `feeebbd` | closed ✅ (prompt-only by scope) |
 
 **Convention going forward:** each milestone lands as one commit whose message
 names the milestone; on completion, comment the commit SHA on the issue and add
