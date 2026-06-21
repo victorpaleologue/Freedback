@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::Router;
 use freedback_protocol::Validator;
 use freedback_storage::FeedbackStore;
@@ -64,6 +64,7 @@ pub fn build_app(state: AppState) -> Router {
             post(handlers::post_annotations).get(handlers::get_collection),
         )
         .route("/annotations/{id}", get(handlers::get_one))
+        .route("/submit/{jwt}", put(handlers::submit))
         .route("/sync", get(handlers::get_sync))
         .route("/.well-known/freedback", get(handlers::well_known))
         .layer(TraceLayer::new_for_http())

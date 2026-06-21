@@ -92,6 +92,33 @@ impl Identity {
     }
 }
 
+impl Identity {
+    /// Sign arbitrary bytes with ES256, returning the base64url(no-pad) R‖S
+    /// signature. Used by the JWT export profile (see `export.rs`).
+    pub fn sign_es256(&self, msg: &[u8]) -> String {
+        let sig: EcdsaSig = self.signing.sign(msg);
+        B64URL.encode(sig.to_bytes())
+    }
+}
+
+/// Verify an ES256 signature (base64url R‖S) over `msg` against an SPKI PEM key.
+pub fn verify_es256(public_key_pem: &str, msg: &[u8], sig_b64url: &str) -> Result<()> {
+    let vk = VerifyingKey::from_public_key_pem(public_key_pem)
+        .map_err(|e| Error::KeyEncoding(e.to_string()))?;
+    let raw = B64URL
+        .decode(sig_b64url.as_bytes())
+        .map_err(|e| Error::Crypto(format!("bad base64url signature: {e}")))?;
+    let ecdsa = EcdsaSig::from_slice(&raw).map_err(|_| Error::SignatureInvalid)?;
+    vk.verify(msg, &ecdsa).map_err(|_| Error::SignatureInvalid)
+}
+
+/// The stable issuer id derived from an SPKI PEM public key.
+pub fn issuer_id_from_pem(public_key_pem: &str) -> Result<String> {
+    let vk = VerifyingKey::from_public_key_pem(public_key_pem)
+        .map_err(|e| Error::KeyEncoding(e.to_string()))?;
+    issuer_id_from_verifying_key(&vk)
+}
+
 /// Derive the stable issuer id from a public key.
 pub fn issuer_id_from_verifying_key(vk: &VerifyingKey) -> Result<String> {
     let der = vk

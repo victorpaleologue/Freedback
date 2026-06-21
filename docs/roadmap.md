@@ -62,9 +62,10 @@ POST-to-container (WAP), paginated reads (`AnnotationPage` + `Link` rels),
 - **Depends on:** M2
 - **Acceptance:** signed-payload tamper rejected (401); SHACL-invalid → 422 +
   report; identical re-POST idempotent; OAuth bearer stamps app-scoped creator;
-  paging emits `Link rel=canonical/type/next/prev` + `ETag`. ✅ (7 in-process
-  integration tests). Remaining: full W3C container conformance suite, batch
-  partial-failure semantics, `PUT /submit/{jwt}` export ingest.
+  paging emits `Link rel=canonical/type/next/prev` + `ETag`; `PUT /submit/{jwt}`
+  accepts the ES256 JWT export profile (ADR 0010). ✅ Remaining: full W3C
+  container conformance suite, batch partial-failure semantics, full Mangrove
+  review-schema mapping.
 
 ### M4 — cli-client (native + wasm) ✅ [#component-4]
 `read` / `write` / `sync`; distinguish collection points (read aggregates) from
