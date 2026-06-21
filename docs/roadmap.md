@@ -112,13 +112,15 @@ Annotorious/RecogitoJS demo loading a Freedback collection page.
 - **Acceptance:** read-only widget renders aggregates; publish widget round-trips
   a POST; comment/tag bodies render in a pure W3C client without transformation.
 
-### M9 — AI equivalence-detection agent [#component-8]
-Scheduled job pulling candidate URI pairs from the index, prompting an LLM
-(`agent-prompts/equivalence.md`), writing accepted pairs as `POST /equivalence`
-with an auditable `proof`.
+### M9 — equivalence-detection prompt ✅ [#component-8]
+**Scope (per maintainer): ship a prompt, not an LLM client.** A self-contained
+prompt that any agent can drop in to decide URI equivalence, plus how it feeds
+the collection server. The prompt is `agent-prompts/equivalence.md`; the write
+path it targets (`POST /equivalence {a,b,proof}`) already exists (M6).
 - **Depends on:** M6
-- **Acceptance:** strict-JSON output; strong-identifier matches accepted;
-  title-only never > 0.6 confidence; only above-threshold pairs written.
+- **Acceptance:** the prompt is strict-JSON, rejects title-only matches above 0.6
+  confidence, and prefers strong identifiers — ✅ (shipped verbatim). A scheduled
+  LLM *client/job* is intentionally out of scope.
 
 ### M10 — deployment + Pages + release [#cross-cutting]
 musl/RocksDB build matrix (cargo-zigbuild); container image; GitHub Pages for

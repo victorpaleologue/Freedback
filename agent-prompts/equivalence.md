@@ -1,7 +1,22 @@
 # Subject-equivalence detection prompt (component 8)
 
-Ship this prompt verbatim to the LLM in the equivalence-detection job. Inputs are
-two resource descriptors pulled from the collection server's per-URI index.
+This is **just a prompt** — a self-contained instruction any agent can drop in to
+decide whether two URIs denote the same subject. There is intentionally no LLM
+client/scheduler in this repo; the agent (whatever it is) runs the prompt and, if
+it accepts, calls the collection server's `POST /equivalence {a, b, proof}`
+(which exists today). Inputs are two resource descriptors built from the
+collection server's per-URI index.
+
+## Input shape (give the agent two of these)
+
+```json
+{
+  "uri": "https://example.com/book/123",
+  "title": "Dune",
+  "identifiers": { "isbn": "9780441013593", "doi": null, "lei": null, "geo": null, "domain": "example.com" },
+  "sampleTargets": ["https://example.com/book/123", "https://example.com/book/123#ch1"]
+}
+```
 
 ---
 
