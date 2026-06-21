@@ -89,6 +89,38 @@ pub trait FeedbackStore: Send + Sync {
         gt_iat: i64,
         latest_edits_only: bool,
     ) -> Result<Vec<Annotation>>;
+
+    /// Snapshot every stored annotation to a JSON-Lines file (one annotation per
+    /// line). Backend-agnostic; used for durable "demo" persistence on top of
+    /// the in-memory backends (see ADR 0008). Returns the number written.
+    async fn dump_jsonl(&self, path: &str) -> Result<usize> {
+        use std::io::Write;
+        let page = self.query(&Query::default()).await?;
+        let mut f = std::fs::File::create(path).map_err(|e| StoreError::Backend(e.to_string()))?;
+        for ann in &page.items {
+            writeln!(f, "{}", serde_json::to_string(ann)?)
+                .map_err(|e| StoreError::Backend(e.to_string()))?;
+        }
+        Ok(page.items.len())
+    }
+
+    /// Load a JSON-Lines snapshot, `put`-ing each annotation (idempotent). A
+    /// missing file is treated as empty. Returns the number newly inserted.
+    async fn load_jsonl(&self, path: &str) -> Result<usize> {
+        let data = match std::fs::read_to_string(path) {
+            Ok(d) => d,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(StoreError::Backend(e.to_string())),
+        };
+        let mut new = 0;
+        for line in data.lines().filter(|l| !l.trim().is_empty()) {
+            let ann: Annotation = serde_json::from_str(line)?;
+            if self.put(&ann).await?.created {
+                new += 1;
+            }
+        }
+        Ok(new)
+    }
 }
 
 /// Internal record shape shared by backends.

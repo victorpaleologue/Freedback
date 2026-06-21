@@ -121,3 +121,31 @@ pub async fn run<S: FeedbackStore>(store: &S) {
         .unwrap();
     assert_eq!(k1_latest.iat().unwrap(), 200);
 }
+
+/// A snapshot dumped from `src` reloads into a fresh `dst` (durable persistence).
+pub async fn persistence<S: FeedbackStore>(src: &S, dst: &S, path: &str) {
+    src.put(&ann(T1, K1, TS100, Motivation::Assessing, Body::star(4.0)))
+        .await
+        .unwrap();
+    src.put(&ann(
+        T1,
+        K2,
+        TS150,
+        Motivation::Assessing,
+        Body::thumb(true),
+    ))
+    .await
+    .unwrap();
+
+    let written = src.dump_jsonl(path).await.unwrap();
+    assert_eq!(written, 2);
+
+    let loaded = dst.load_jsonl(path).await.unwrap();
+    assert_eq!(loaded, 2, "all annotations reload into a fresh store");
+
+    let page = dst.query(&Query::default()).await.unwrap();
+    assert_eq!(page.total, 2);
+
+    // Reloading again is idempotent (dedup by content id).
+    assert_eq!(dst.load_jsonl(path).await.unwrap(), 0);
+}

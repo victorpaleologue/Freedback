@@ -10,6 +10,10 @@ services:
     environment:
       FREEDBACK_BIND: 0.0.0.0:8080
       FREEDBACK_BASE_URL: http://localhost:8080
+      # Durable demo storage: snapshot on the named volume survives restarts.
+      FREEDBACK_STORE_PATH: /data/feedback.jsonl
+    volumes:
+      - feedback-data:/data
     ports:
       - "8080:8080"
 
@@ -36,3 +40,6 @@ services:
       - "8100:8100"
     depends_on:
       - feedback
+
+volumes:
+  feedback-data:

@@ -39,16 +39,24 @@ docker run -p 8080:8080 -e FREEDBACK_BASE_URL=https://feedback.example.org \
 | `FREEDBACK_SERVERS` | — | collection (comma-separated upstreams) |
 | `FREEDBACK_OAUTH_TOKEN` / `_APP` / `_USER` | — | feedback (one demo bearer token) |
 
-## Storage caveat (important)
+## Storage
 
 This image uses **Oxigraph's in-memory backend** — the workspace pins
 `oxigraph` with `default-features = false`, so RocksDB and Clang are not needed
-and the build is a clean single binary. **Data is therefore ephemeral**: it does
-not survive a restart. This is the "one-command demo" posture.
+and the build is a clean single binary.
 
-A durable build (RocksDB backend, or a `dump/load` on shutdown) is tracked as
-future work. The static-binary `x86_64-unknown-linux-musl` target (via
-`cargo-zigbuild`) is also future work; the current image is glibc/`debian-slim`.
+**Durable demo storage (snapshots).** Set `FREEDBACK_STORE_PATH` to a file on a
+mounted volume and the feedback server loads it on boot, re-snapshots every 60 s,
+and snapshots on graceful shutdown (Ctrl-C / SIGTERM). The compose stack does
+this on a named volume, so feedback **survives restarts**. The format is
+JSON-Lines (one annotation per line), backend-agnostic and `put`-idempotent.
+This is snapshot — **not transactional** — persistence (ADR 0008): a crash
+between snapshots can lose up to ~60 s of writes. Leave `FREEDBACK_STORE_PATH`
+unset for the old ephemeral behavior.
+
+A fully transactional backend (RocksDB feature / WAL) and the static-binary
+`x86_64-unknown-linux-musl` target (via `cargo-zigbuild`) remain future work;
+the current image is glibc/`debian-slim`.
 
 ## TLS
 
