@@ -13,6 +13,8 @@
     .fb-agg { color: #444; margin-left: .5rem; }
     .fb-status { color: #c00; margin-left: .5rem; font-size: .85rem; }
     .fb-in { flex: 1; padding: .35rem .5rem; }
+    .fb-scalar { display: flex; gap: .5rem; align-items: center; }
+    .fb-chip { display: inline-block; background: #eef; border-radius: 999px; padding: .1em .6em; margin: .15em; font-size: .85rem; }
     code { background: #f3f3f3; padding: .1em .35em; border-radius: 4px; }
   </style>
 </head>
@@ -20,13 +22,22 @@
   <h1>Freedback widgets</h1>
   <p>Run the stack first: <code>docker compose up --build</code> (feedback :8080,
   collection :8100). These widgets read aggregates from the collection server and
-  publish to the feedback server. Publishing needs auth — set a demo OAuth token
-  on the feedback server (<code>FREEDBACK_OAUTH_TOKEN/_APP/_USER</code>) and put it
-  in <code>data-token</code>, or the POST returns 401 (read-only still works).</p>
+  publish to the feedback server. Two ways to authorize a write:</p>
+  <ul>
+    <li><b><code>data-sign</code></b> — the page generates a P-256 key (WebCrypto,
+      kept non-extractable in IndexedDB) and attaches a detached ES256 signature.
+      No token needed; this is the <em>federating</em> identity. Needs a secure
+      context (<code>localhost</code> counts).</li>
+    <li><b><code>data-token</code></b> — an OAuth bearer (set
+      <code>FREEDBACK_OAUTH_TOKEN/_APP/_USER</code> on the feedback server). The
+      siloed, non-federating identity.</li>
+  </ul>
+  <p>The widgets below use <code>data-sign</code>. Without either, a POST returns
+  401 (read-only still works).</p>
 
   <div class="card">
     <h3>Stars</h3>
-    <freedback-stars
+    <freedback-stars data-sign
       data-target="https://example.com/item/1"
       data-read="http://localhost:8100/index"
       data-publish="http://localhost:8080/annotations/"></freedback-stars>
@@ -34,18 +45,35 @@
 
   <div class="card">
     <h3>Thumbs</h3>
-    <freedback-thumb
+    <freedback-thumb data-sign
       data-target="https://example.com/item/1"
       data-read="http://localhost:8100/index"
       data-publish="http://localhost:8080/annotations/"></freedback-thumb>
   </div>
 
   <div class="card">
+    <h3>Scalar (custom scale 0–10)</h3>
+    <freedback-scalar data-sign
+      data-worst="0" data-best="10" data-step="1"
+      data-target="https://example.com/item/1"
+      data-read="http://localhost:8100/index"
+      data-publish="http://localhost:8080/annotations/"></freedback-scalar>
+  </div>
+
+  <div class="card">
     <h3>Comments</h3>
-    <freedback-comment
+    <freedback-comment data-sign
       data-target="https://example.com/item/1"
       data-read="http://localhost:8100/index"
       data-publish="http://localhost:8080/annotations/"></freedback-comment>
+  </div>
+
+  <div class="card">
+    <h3>Tags</h3>
+    <freedback-tag data-sign
+      data-target="https://example.com/item/1"
+      data-read="http://localhost:8100/index"
+      data-publish="http://localhost:8080/annotations/"></freedback-tag>
   </div>
 
   <div class="card">

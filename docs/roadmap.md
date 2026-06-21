@@ -31,7 +31,7 @@ carries its resolving commit.
 | M6 collection-server | #7 | `dd997ad` | closed ✅ (cache freshness + validators added, ADR 0012) |
 | M7 advanced-client | #8 | `1a70947` | closed ✅ (negentropy deferred) |
 | M9 equivalence prompt | #10 | `feeebbd` | closed ✅ (prompt-only by scope) |
-| M8 widgets/extension/demo | #9 | `bba88dc` | closed ✅ (core; WebCrypto/scalar/tag deferred) |
+| M8 widgets/extension/demo | #9 | `bba88dc` | closed ✅ (WebCrypto signing + scalar/tag added, ADR 0013) |
 | M10 deployment (core) | #11 | `191d210` | open — musl/release/durable-store deferred |
 | Full JSON-LD (foreign `@context`) | #12 | `1503996` | closed ✅ (compaction, ADR 0011) |
 
@@ -114,19 +114,25 @@ dedup-on-merge with edit supersession; `reconcile_full` for backdated items.
   backdated reconciliation uses a full pull as a stand-in for negentropy
   (NIP-77) — the efficient range-based protocol remains future work.
 
-### M8 — widgets + Firefox extension + interop demo ✅ (core) [#components-3,9,5]
-Drop-in Web Components (`<freedback-stars/thumb/comment>`) — vanilla JS, no build
-step; read-only renders aggregates, `data-publish` POSTs a W3C annotation. A
-Firefox (MV3) popup lists feedback for the active tab's URL. A dependency-free
-interop demo renders a Freedback collection page as plain W3C annotations.
+### M8 — widgets + Firefox extension + interop demo ✅ [#components-3,9,5]
+Drop-in Web Components (`<freedback-stars/thumb/scalar/comment/tag>`) — vanilla
+JS, no build step; read-only renders aggregates, `data-publish` POSTs a W3C
+annotation. A Firefox (MV3) popup lists feedback for the active tab's URL. A
+dependency-free interop demo renders a Freedback collection page as plain W3C
+annotations.
 - **Depends on:** M4 (read/write paths), M6 (aggregates)
 - **Acceptance:** read-only widget renders aggregates; publish widget builds &
   POSTs a valid annotation; comment/tag render in a pure W3C client without
   transformation, ratings as typed bodies. ✅ Pure helpers unit-tested in CI
   (`widgets/test.cjs`) + JS syntax/manifest checks. **Note:** not browser-E2E'd
-  in CI (no headless browser infra); manual via `widgets/demo.html`. WebCrypto
-  P-256 signing and `<freedback-scalar>`/`<freedback-tag>` + wasm `protocol-lib`
-  glue are deferred; publishing currently uses the OAuth bearer path. Publish
+  in CI (no headless browser infra); manual via `widgets/demo.html`.
+  **WebCrypto P-256 signing** now ships (ADR 0013): `data-sign` attaches a
+  detached ES256 signature over the RFC 8785 JCS bytes, byte-matched to the Rust
+  canonicalizer and cross-checked end-to-end by
+  `protocol-lib/tests/widget_interop.rs` (a browser-signed fixture verified in
+  Rust). `<freedback-scalar>` and `<freedback-tag>` shipped. Remaining: wasm
+  `protocol-lib` glue (the JS path needs no wasm) and key recovery/rotation UI.
+  Publish
   under **`@freedback/widgets`** (the bare npm name is taken — `docs/naming.md`).
 
 ### M9 — equivalence-detection prompt ✅ [#component-8]
