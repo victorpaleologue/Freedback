@@ -21,7 +21,10 @@
     Playwright spec can find and drive it precisely.
   -->
   <div id="widgets"></div>
-  <script src="freedback-widgets.js"></script>
+  <!-- Absolute path: this page is served at /e2e/e2e.html, but the widget
+       script lives at the static root (/freedback-widgets.js). A relative src
+       resolves against /e2e/ and 404s, leaving the custom elements undefined. -->
+  <script src="/freedback-widgets.js"></script>
   <script>
     (() => {
       const q = new URLSearchParams(location.search);
