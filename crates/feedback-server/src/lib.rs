@@ -46,6 +46,12 @@ pub struct AppState {
     /// must match this published key). `None` keeps the legacy behavior where
     /// announce is authenticated by the well-known fetch alone.
     pub server_key_pem: Option<String>,
+    /// When set, wrap the router in a permissive CORS layer so browser widgets
+    /// served from a different origin can read and publish (the real
+    /// cross-origin widget scenario). Off by default to keep server behavior
+    /// unchanged; the binary enables it via `FREEDBACK_CORS_PERMISSIVE` and the
+    /// widgets headless-browser E2E harness sets it.
+    pub cors_permissive: bool,
 }
 
 impl AppState {
@@ -59,7 +65,14 @@ impl AppState {
             page_size: 50,
             cache_max_age: 30,
             server_key_pem: None,
+            cors_permissive: false,
         }
+    }
+
+    /// Enable a permissive CORS layer (cross-origin browser widgets).
+    pub fn with_cors_permissive(mut self, on: bool) -> Self {
+        self.cors_permissive = on;
+        self
     }
 
     /// Publish a server-identity public key (P-256 SPKI PEM) in the well-known,
@@ -84,7 +97,8 @@ impl AppState {
 
 /// Build the axum router for the feedback server.
 pub fn build_app(state: AppState) -> Router {
-    Router::new()
+    let cors_permissive = state.cors_permissive;
+    let router = Router::new()
         .route(
             "/annotations/",
             post(handlers::post_annotations).get(handlers::get_collection),
@@ -93,6 +107,25 @@ pub fn build_app(state: AppState) -> Router {
         .route("/submit/{jwt}", put(handlers::submit))
         .route("/sync", get(handlers::get_sync))
         .route("/.well-known/freedback", get(handlers::well_known))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .layer(TraceLayer::new_for_http());
+
+    let router = if cors_permissive {
+        router.layer(permissive_cors())
+    } else {
+        router
+    };
+
+    router.with_state(state)
+}
+
+/// A permissive CORS layer for cross-origin browser widgets: any origin, the
+/// methods/headers the widgets use (GET/POST + `content-type`/`authorization`),
+/// and the conditional-read response headers an aggregator/widget inspects.
+fn permissive_cors() -> tower_http::cors::CorsLayer {
+    use axum::http::{header, Method};
+    tower_http::cors::CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+        .expose_headers([header::ETAG, header::LAST_MODIFIED, header::LINK])
 }

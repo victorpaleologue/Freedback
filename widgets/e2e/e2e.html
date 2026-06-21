@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Freedback widgets E2E harness</title>
+</head>
+<body>
+  <h1>Freedback widgets E2E</h1>
+  <!--
+    A deterministic harness page for the headless-browser E2E. Unlike demo.html
+    (which hard-codes data-sign), this builds widgets from URL query params so the
+    spec can drive BOTH auth paths against the same local stack:
+
+      ?feedback=http://127.0.0.1:8080/annotations/
+      &read=http://127.0.0.1:8100/index
+      &target=https://example.com/item/e2e
+      &token=<oauth-bearer>        (optional; selects the data-token path)
+      &auth=sign|token             (which auth path to wire onto the widgets)
+
+    Each widget kind gets an id (#stars, #thumb, #scalar, #comment, #tag) so the
+    Playwright spec can find and drive it precisely.
+  -->
+  <div id="widgets"></div>
+  <script src="freedback-widgets.js"></script>
+  <script>
+    (() => {
+      const q = new URLSearchParams(location.search);
+      const feedback = q.get("feedback");
+      const read = q.get("read");
+      const target = q.get("target") || "https://example.com/item/e2e";
+      const token = q.get("token") || "";
+      const auth = q.get("auth") || (token ? "token" : "sign");
+
+      const container = document.getElementById("widgets");
+      const kinds = [
+        ["freedback-stars", "stars", {}],
+        ["freedback-thumb", "thumb", {}],
+        ["freedback-scalar", "scalar", { "data-worst": "0", "data-best": "10", "data-step": "1" }],
+        ["freedback-comment", "comment", {}],
+        ["freedback-tag", "tag", {}],
+      ];
+      for (const [tag, id, extra] of kinds) {
+        const el = document.createElement(tag);
+        el.id = id;
+        el.setAttribute("data-target", target);
+        if (read) el.setAttribute("data-read", read);
+        if (feedback) el.setAttribute("data-publish", feedback);
+        for (const [k, v] of Object.entries(extra)) el.setAttribute(k, v);
+        if (auth === "sign") {
+          el.setAttribute("data-sign", "");
+        } else if (token) {
+          el.setAttribute("data-token", token);
+        }
+        const card = document.createElement("div");
+        card.className = "card";
+        card.appendChild(el);
+        container.appendChild(card);
+      }
+      // Signal readiness for the spec to await.
+      window.__fbReady = true;
+    })();
+  </script>
+</body>
+</html>

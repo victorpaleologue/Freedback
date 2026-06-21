@@ -40,6 +40,20 @@ async fn main() -> anyhow::Result<()> {
 
     let mut state = AppState::new(store.clone(), base_url.clone());
 
+    // Permissive CORS for cross-origin browser widgets (off unless asked).
+    if env_flag("FREEDBACK_CORS_PERMISSIVE") {
+        state = state.with_cors_permissive(true);
+    }
+
+    // Optionally override the collection `Cache-Control: max-age` (seconds). An
+    // aggregator can be told to always revalidate with `0`, which the widgets
+    // E2E uses for a deterministic publish→read-back through the collection.
+    if let Ok(secs) = std::env::var("FREEDBACK_CACHE_MAX_AGE") {
+        if let Ok(secs) = secs.parse::<u64>() {
+            state = state.with_cache_max_age(secs);
+        }
+    }
+
     // Optional single demo OAuth token.
     if let (Ok(token), Ok(app), Ok(user)) = (
         std::env::var("FREEDBACK_OAUTH_TOKEN"),
@@ -79,6 +93,17 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// A truthy env flag: set and not one of `0`/`false`/`no`/`off`/empty.
+fn env_flag(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(v) => !matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "" | "0" | "false" | "no" | "off"
+        ),
+        Err(_) => false,
+    }
 }
 
 /// Resolve when the process receives Ctrl-C or (on Unix) SIGTERM.
