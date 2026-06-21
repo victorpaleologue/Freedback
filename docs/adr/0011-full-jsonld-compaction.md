@@ -74,13 +74,21 @@ returns a `json_syntax::Value` directly.
   wasm core (which relies on server-side normalization, per ADR 0004). Gated
   behind the `jsonld` feature so non-server consumers and the wasm build never
   pull it.
-- **Inline contexts resolve offline.** The processor uses `NoLoader`, so a
-  document that references a **remote** `@context` URL (e.g. a bare
-  `"http://www.w3.org/ns/anno.jsonld"` with otherwise non-pinned terms) is not
-  fetched. We deliberately do **no network I/O on the validation path** (SSRF /
-  latency / availability). A preloaded loader seeded with the well-known
-  contexts (anno, schema.org) is the natural next step and fits behind the same
-  function with no API change.
+- **Inline contexts and well-known remote contexts resolve offline.** The
+  processor is driven by a **preloaded allowlist loader** (`preloaded_loader`)
+  seeded with the well-known remote `@context` documents bundled at compile time
+  (`ontology/vendor/`): the canonical W3C Web Annotation context
+  (`http(s)://www.w3.org/ns/anno.jsonld`, verbatim) and a **curated schema.org
+  rating subset** (`http(s)://schema.org/…`, the rating terms Freedback's typed
+  bodies use). So a document that references one of those URLs — e.g. a bare
+  `"http://www.w3.org/ns/anno.jsonld"` alongside otherwise non-pinned terms —
+  normalizes to the same dedup id without any network call (issue #24). The
+  loader is a fixed `HashMap`; **every other URL is refused** (`EntryNotFound`),
+  so there is still **no network I/O on the validation path** — no arbitrary
+  fetch, no SSRF, no latency/availability coupling. The full schema.org context
+  (~205 KB, with a global `@vocab` catch-all that would mis-expand foreign
+  terms) is intentionally not bundled; see `ontology/vendor/README.md` for
+  provenance and the exact loader keys.
 - Documents already expressible over the pinned vocabulary never reach this path
   — the fast normalizer handles them, so there is no performance regression for
   the common case.

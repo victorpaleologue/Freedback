@@ -1,0 +1,16 @@
+{
+  "@context": {
+    "schema": "http://schema.org/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+
+    "Rating": "schema:Rating",
+    "AggregateRating": "schema:AggregateRating",
+
+    "ratingValue": { "@id": "schema:ratingValue", "@type": "xsd:double" },
+    "bestRating": { "@id": "schema:bestRating", "@type": "xsd:double" },
+    "worstRating": { "@id": "schema:worstRating", "@type": "xsd:double" },
+
+    "ratingCount": { "@id": "schema:ratingCount", "@type": "xsd:nonNegativeInteger" },
+    "reviewCount": { "@id": "schema:reviewCount", "@type": "xsd:nonNegativeInteger" }
+  }
+}
