@@ -25,9 +25,10 @@
   publish to the feedback server. Two ways to authorize a write:</p>
   <ul>
     <li><b><code>data-sign</code></b> — the page generates a P-256 key (WebCrypto,
-      kept non-extractable in IndexedDB) and attaches a detached ES256 signature.
-      No token needed; this is the <em>federating</em> identity. Needs a secure
-      context (<code>localhost</code> counts).</li>
+      kept in IndexedDB) and attaches a detached ES256 signature. No token needed;
+      this is the <em>federating</em> identity. The key is extractable so you can
+      password-back-it-up / move devices (see the identity card below). Needs a
+      secure context (<code>localhost</code> counts).</li>
     <li><b><code>data-token</code></b> — an OAuth bearer (set
       <code>FREEDBACK_OAUTH_TOKEN/_APP/_USER</code> on the feedback server). The
       siloed, non-federating identity.</li>
@@ -83,6 +84,95 @@
       data-read="http://localhost:8100/index"></freedback-stars>
   </div>
 
+  <div class="card" id="identity-card">
+    <h3>Your signing identity (<code>data-sign</code>)</h3>
+    <p>The <em>federating</em> identity is a P-256 key kept in this browser's
+    IndexedDB. The <b>issuer id</b> below is your portable public identity. Back
+    it up with a password so you can restore it on another device — or if this
+    browser clears its storage. Rotating makes a new key; past signed feedback
+    stays valid and a cross-signed link keeps the history attributable.</p>
+    <p>Issuer id: <code id="fb-issuer">(loading…)</code></p>
+    <div class="fb-row" style="flex-wrap: wrap; gap: .5rem;">
+      <button id="fb-export">Back up (export)</button>
+      <button id="fb-import">Restore (import)</button>
+      <button id="fb-rotate">Rotate key</button>
+    </div>
+    <p id="fb-id-status" class="fb-status" style="margin-left: 0;"></p>
+    <details>
+      <summary>Lost your identity? (IndexedDB cleared)</summary>
+      <p>If this browser cleared its storage, the in-browser key is gone and new
+      feedback would sign under a <em>new</em> issuer id. To keep your old
+      identity, click <b>Restore (import)</b> and paste a backup you exported
+      earlier. Without a backup, the old key is unrecoverable — but any feedback
+      already signed under it stays valid and verifiable forever.</p>
+    </details>
+  </div>
+
   <script src="freedback-widgets.js"></script>
+  <script>
+    // Minimal export / import / rotate affordances for the demo (issue #27).
+    (() => {
+      const F = window.Freedback;
+      const status = (m) => (document.getElementById("fb-id-status").textContent = m || "");
+      const showIssuer = (id) => (document.getElementById("fb-issuer").textContent = id);
+
+      F.getIdentity()
+        .then((i) => showIssuer(i.issuerId))
+        .catch((e) => showIssuer("(unavailable: " + (e.message || e) + ")"));
+
+      document.getElementById("fb-export").addEventListener("click", async () => {
+        const pw = prompt("Choose a password to encrypt your identity backup:");
+        if (!pw) return;
+        try {
+          const blob = await F.exportIdentity(pw);
+          const text = JSON.stringify(blob, null, 2);
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+          a.download = "freedback-identity.json";
+          a.click();
+          status("Identity backup downloaded (keep the password safe).");
+        } catch (e) {
+          status("Export failed: " + (e.message || e));
+        }
+      });
+
+      document.getElementById("fb-import").addEventListener("click", () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json";
+        input.addEventListener("change", async () => {
+          const file = input.files && input.files[0];
+          if (!file) return;
+          const pw = prompt("Enter the password for this backup:");
+          if (!pw) return;
+          try {
+            const blob = JSON.parse(await file.text());
+            const ident = await F.importIdentity(blob, pw);
+            showIssuer(ident.issuerId);
+            status("Identity restored. Future feedback signs under this issuer id.");
+          } catch (e) {
+            status("Import failed: " + (e.message || e));
+          }
+        });
+        input.click();
+      });
+
+      document.getElementById("fb-rotate").addEventListener("click", async () => {
+        if (!confirm("Generate a NEW signing key? Past signed feedback stays valid.")) return;
+        try {
+          const { identity, previous, link } = await F.rotateIdentity();
+          showIssuer(identity.issuerId);
+          status(
+            previous
+              ? "Rotated. New issuer id active; link cross-signs the old id " + previous.issuerId + "."
+              : "New identity generated."
+          );
+          if (link) console.log("rotation link (publishable):", link);
+        } catch (e) {
+          status("Rotation failed: " + (e.message || e));
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
