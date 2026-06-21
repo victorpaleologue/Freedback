@@ -13,6 +13,11 @@ const {
   scalarBody,
   textBody,
   buildSignedAnnotation,
+  generateKeyRecord,
+  identityFromRecord,
+  wrapIdentity,
+  unwrapIdentity,
+  buildRotationLink,
 } = require("./freedback-widgets.js");
 
 // baseAnnotation emits the W3C wire shape.
@@ -129,8 +134,105 @@ async function signingTest() {
   assert.strictEqual(sig.length, 64, "raw R||S signature is 64 bytes");
 }
 
+// --- identity export / import / rotation (issue #27) ----------------------
+// The portable issuer id is the public key; it must survive a password-encrypted
+// export → import round-trip, and a wrong password must fail closed. Rotation
+// must yield a *new* signing key (new issuer id) while leaving past signatures
+// verifiable and emitting a link statement the new key signs over the old id.
+async function identityTest() {
+  const sc = globalThis.crypto && globalThis.crypto.subtle;
+  if (!sc) {
+    console.log("widgets: skipping identity mgmt test (no crypto.subtle)");
+    return;
+  }
+
+  // A fresh extractable key record stands in for what IndexedDB would hold.
+  const rec = await generateKeyRecord(sc);
+  const ident = await identityFromRecord(sc, rec);
+  assert.ok(ident.issuerId.startsWith("urn:freedback:key:"), "issuer id is the key digest");
+  assert.ok(ident.kid.includes("BEGIN PUBLIC KEY"), "kid is the SPKI PEM");
+
+  // Password-wrap → unwrap round-trips the SAME issuer id (portable identity).
+  const blob = await wrapIdentity(sc, rec, "correct horse battery staple");
+  assert.strictEqual(blob.type, "freedback-identity");
+  assert.strictEqual(blob.alg, "ES256");
+  // The blob carries no plaintext key material (only ciphertext + public spki).
+  const blobStr = JSON.stringify(blob);
+  assert.ok(!/"d"\s*:/.test(blobStr), "wrapped blob must not leak the private JWK 'd'");
+
+  const restored = await unwrapIdentity(sc, blob, "correct horse battery staple");
+  const restoredIdent = await identityFromRecord(sc, restored);
+  assert.strictEqual(restoredIdent.issuerId, ident.issuerId, "import restores the same issuer id");
+  assert.strictEqual(restoredIdent.kid, ident.kid, "import restores the same kid PEM");
+
+  // The restored private key still signs annotations the original key would have.
+  const ann = await buildSignedAnnotation(
+    "assessing",
+    "https://example.com/item/1",
+    starBody(5),
+    restoredIdent,
+    "2026-06-21T10:00:00Z"
+  );
+  const { signature, ...emitted } = ann;
+  const bytes = new TextEncoder().encode(jcs(emitted));
+  const pub = await sc.importKey(
+    "spki",
+    new Uint8Array(restored.spki),
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["verify"]
+  );
+  const sig = Uint8Array.from(Buffer.from(signature.sig.replace(/-/g, "+").replace(/_/g, "/"), "base64"));
+  assert.ok(
+    await sc.verify({ name: "ECDSA", hash: "SHA-256" }, pub, sig, bytes),
+    "restored key produces a verifying signature"
+  );
+
+  // Wrong password must fail closed (AES-GCM tag mismatch), not silently return.
+  await assert.rejects(
+    () => unwrapIdentity(sc, blob, "wrong password"),
+    /wrong password or corrupt backup/,
+    "a bad password must be rejected"
+  );
+
+  // Rotation yields a NEW signing key (different issuer id) and a link the new
+  // key signs vouching for the old issuer id, keeping history attributable.
+  const newRec = await generateKeyRecord(sc);
+  const newIdent = await identityFromRecord(sc, newRec);
+  assert.notStrictEqual(newIdent.issuerId, ident.issuerId, "rotation produces a new issuer id");
+
+  const link = await buildRotationLink(sc, ident, newRec);
+  assert.strictEqual(link.statement.oldIssuer, ident.issuerId, "link carries the old issuer id");
+  assert.strictEqual(link.statement.newIssuer, newIdent.issuerId, "link carries the new issuer id");
+  assert.strictEqual(link.signature.kid, newIdent.kid, "link is signed by the NEW key");
+
+  // Verify the link signature with the new public key over the canonical bytes.
+  const linkBytes = new TextEncoder().encode(jcs(link.statement));
+  const newPub = await sc.importKey(
+    "spki",
+    new Uint8Array(newRec.spki),
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["verify"]
+  );
+  const linkSig = Uint8Array.from(
+    Buffer.from(link.signature.sig.replace(/-/g, "+").replace(/_/g, "/"), "base64")
+  );
+  assert.ok(
+    await sc.verify({ name: "ECDSA", hash: "SHA-256" }, newPub, linkSig, linkBytes),
+    "rotation link verifies under the new key"
+  );
+
+  // The OLD key's past signature still verifies independently of rotation.
+  assert.ok(
+    await sc.verify({ name: "ECDSA", hash: "SHA-256" }, pub, sig, bytes),
+    "past self-signed annotations stay valid after rotation"
+  );
+}
+
 signingTest()
-  .then(() => console.log("widgets: all helper + JCS + signing tests passed"))
+  .then(identityTest)
+  .then(() => console.log("widgets: all helper + JCS + signing + identity tests passed"))
   .catch((e) => {
     console.error(e);
     process.exit(1);
