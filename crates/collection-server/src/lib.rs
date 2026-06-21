@@ -21,9 +21,11 @@ use serde_json::{json, Value};
 use tower_http::trace::TraceLayer;
 
 pub mod equivalence;
+mod persist;
 pub mod token_bucket;
 
 use equivalence::EquivalenceSet;
+use persist::PersistStore;
 use token_bucket::TokenBucket;
 
 /// Per-`(server, uri)` cache entry for conditional revalidation.
@@ -32,12 +34,12 @@ use token_bucket::TokenBucket;
 /// freshness deadline derived from the upstream `Cache-Control: max-age`, within
 /// which the entry is reused with **no** upstream request at all.
 #[derive(Default, Clone)]
-struct CacheEntry {
-    etag: Option<String>,
-    last_modified: Option<String>,
+pub(crate) struct CacheEntry {
+    pub(crate) etag: Option<String>,
+    pub(crate) last_modified: Option<String>,
     /// `Instant` until which the entry is fresh (from `Cache-Control: max-age`).
-    fresh_until: Option<Instant>,
-    items: Vec<Annotation>,
+    pub(crate) fresh_until: Option<Instant>,
+    pub(crate) items: Vec<Annotation>,
 }
 
 impl CacheEntry {
@@ -77,6 +79,9 @@ pub struct AppState {
     upstream_calls: Arc<AtomicU64>,
     upstream_304: Arc<AtomicU64>,
     cache_hits: Arc<AtomicU64>,
+    /// Durable backing for `servers` / `cache` / `eq`, write-through on mutation.
+    /// `None` ⇒ the original ephemeral, in-memory-only behavior.
+    persist: Option<Arc<PersistStore>>,
 }
 
 impl AppState {
@@ -98,12 +103,62 @@ impl AppState {
             upstream_calls: Arc::new(AtomicU64::new(0)),
             upstream_304: Arc::new(AtomicU64::new(0)),
             cache_hits: Arc::new(AtomicU64::new(0)),
+            persist: None,
         }
+    }
+
+    /// Build state durably backed by a [`redb`] database at `path`, reloading any
+    /// previously persisted `servers` / `equivalence` / `cache` so a restart
+    /// resumes its index instead of starting cold. Subsequent mutations are
+    /// written through to the same database.
+    pub fn with_persistence(
+        base_url: impl Into<String>,
+        rate: RateLimit,
+        path: impl AsRef<std::path::Path>,
+    ) -> std::io::Result<Self> {
+        let store = PersistStore::open(path).map_err(std::io::Error::other)?;
+        Self::from_persist(base_url, rate, store)
+    }
+
+    /// Build state over an already-opened [`PersistStore`] (also used by tests
+    /// with an in-memory backend). Replays the persisted state on boot.
+    pub(crate) fn from_persist(
+        base_url: impl Into<String>,
+        rate: RateLimit,
+        store: PersistStore,
+    ) -> std::io::Result<Self> {
+        let mut state = Self::with_rate(base_url, rate);
+
+        // Replay persisted state.
+        let to_io = std::io::Error::other;
+        let servers: BTreeSet<String> = store.servers().map_err(to_io)?.into_iter().collect();
+        *state.servers.lock().unwrap() = servers;
+        {
+            let mut eq = state.eq.lock().unwrap();
+            for (a, b, proof) in store.equivalences().map_err(to_io)? {
+                eq.union(&a, &b, proof);
+            }
+        }
+        {
+            let mut cache = state.cache.lock().unwrap();
+            for (key, entry) in store.cache().map_err(to_io)? {
+                cache.insert(key, entry);
+            }
+        }
+
+        state.persist = Some(Arc::new(store));
+        Ok(state)
     }
 
     /// Register an upstream feedback server (used in tests/bootstrap).
     pub fn add_server(&self, url: &str) {
-        self.servers.lock().unwrap().insert(normalize(url));
+        let base = normalize(url);
+        let inserted = self.servers.lock().unwrap().insert(base.clone());
+        if inserted {
+            if let Some(p) = &self.persist {
+                let _ = p.put_server(&base);
+            }
+        }
     }
 
     /// Total upstream GETs actually issued (after rate limiting).
@@ -293,6 +348,9 @@ impl AppState {
             if let Some(lm) = last_modified_of(resp.headers()) {
                 entry.last_modified = Some(lm);
             }
+            if let Some(p) = &self.persist {
+                let _ = p.put_cache(&key.0, &key.1, &entry);
+            }
             self.cache.lock().unwrap().insert(key, entry);
             return cached.items;
         }
@@ -315,15 +373,16 @@ impl AppState {
         let items = parse_items(&doc);
 
         if !no_store {
-            self.cache.lock().unwrap().insert(
-                key,
-                CacheEntry {
-                    etag,
-                    last_modified,
-                    fresh_until,
-                    items: items.clone(),
-                },
-            );
+            let entry = CacheEntry {
+                etag,
+                last_modified,
+                fresh_until,
+                items: items.clone(),
+            };
+            if let Some(p) = &self.persist {
+                let _ = p.put_cache(&key.0, &key.1, &entry);
+            }
+            self.cache.lock().unwrap().insert(key, entry);
         }
         items
     }
@@ -388,7 +447,14 @@ async fn post_equivalence(
     Json(body): Json<EquivalenceBody>,
 ) -> Json<Value> {
     let proof = body.proof.unwrap_or_else(|| "manual".to_string());
-    state.eq.lock().unwrap().union(&body.a, &body.b, proof);
+    state
+        .eq
+        .lock()
+        .unwrap()
+        .union(&body.a, &body.b, proof.clone());
+    if let Some(p) = &state.persist {
+        let _ = p.append_equivalence(&body.a, &body.b, &proof);
+    }
     Json(json!({ "ok": true }))
 }
 
