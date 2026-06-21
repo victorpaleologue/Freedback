@@ -142,6 +142,40 @@ pub async fn get_collection(
     Ok((view.headers, Json(view.body)).into_response())
 }
 
+/// `PUT /submit/{jwt}` — Mangrove-style export-profile ingest.
+///
+/// The annotation is carried as an ES256 JWT; its signature is the issuer proof,
+/// so this path needs no bearer/self-signature. The payload is normalized,
+/// SHACL-validated, and stored like any other write.
+pub async fn submit(
+    State(state): State<AppState>,
+    Path(jwt): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let mut ann = freedback_protocol::from_jwt(&jwt)
+        .map_err(|e| ApiError::unauthorized(format!("invalid JWT: {e}")))?;
+
+    ann.structural_check()?;
+    let outcome = state.validator.validate(&ann)?;
+    if !outcome.conforms {
+        return Err(ApiError::Validation(outcome.violations));
+    }
+    let id = dedup_id(&ann)?;
+    ann.id = Some(format!("{}/annotations/{}", state.base_url, id));
+    state.store.put(&ann).await?;
+
+    let mut headers = HeaderMap::new();
+    if let Some(id) = ann.id.as_deref() {
+        if let Ok(v) = HeaderValue::from_str(id) {
+            headers.insert(LOCATION, v);
+        }
+    }
+    Ok((
+        StatusCode::CREATED,
+        headers,
+        Json(serde_json::to_value(&ann)?),
+    ))
+}
+
 /// `GET /annotations/{id}` — single annotation by dedup id.
 pub async fn get_one(
     State(state): State<AppState>,
@@ -178,7 +212,7 @@ pub async fn well_known(State(state): State<AppState>) -> Json<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "protocol": "freedback/1",
         "formats": ["application/ld+json"],
-        "capabilities": ["wap-container", "sync-cursor", "jws-identity", "oauth-identity"],
+        "capabilities": ["wap-container", "sync-cursor", "jws-identity", "oauth-identity", "jwt-export"],
         "conformsTo": "https://freedback.org/profile/1",
         "links": [
             { "rel": "self", "href": format!("{}/.well-known/freedback", state.base_url) },

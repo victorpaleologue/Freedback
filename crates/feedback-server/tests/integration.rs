@@ -233,6 +233,45 @@ async fn accepts_varied_jsonld_serialization() {
 }
 
 #[tokio::test]
+async fn submit_jwt_export_profile() {
+    use freedback_protocol::to_jwt;
+    let app = app();
+    // No bearer / no detached signature — the JWT itself is the issuer proof.
+    let id = Identity::generate();
+    let ann = Annotation::new(
+        Motivation::Assessing,
+        Target::Iri("https://example.com/item/7".into()),
+        vec![FbBody::star(4.0)],
+    )
+    .with_created("2026-06-21T10:00:00Z");
+    let jwt = to_jwt(&ann, &id).unwrap();
+
+    let (status, headers, body) = send(&app, "PUT", &format!("/submit/{jwt}"), None, None).await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "valid JWT submit must be accepted"
+    );
+    assert!(headers.contains_key("location"));
+    assert_eq!(body["creator"]["id"], id.issuer_id().unwrap());
+
+    // Readable back.
+    let (_s, _h, page) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/7",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(page["partOf"]["total"], 1);
+
+    // A garbage JWT is rejected.
+    let (status, _h, _b) = send(&app, "PUT", "/submit/not.a.jwt", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn repost_is_idempotent() {
     let app = app();
     let (_id, ann) = signed_star(5.0);

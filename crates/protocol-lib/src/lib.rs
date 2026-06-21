@@ -26,6 +26,7 @@
 pub mod canonical;
 pub mod context;
 pub mod error;
+pub mod export;
 pub mod identity;
 pub mod jsonld;
 pub mod model;
@@ -36,6 +37,7 @@ pub mod validation;
 
 pub use canonical::{canonical_bytes, dedup_id};
 pub use error::{Error, Result};
+pub use export::{from_jwt, to_jwt};
 pub use identity::{verify_annotation, Identity};
 pub use jsonld::from_jsonld;
 pub use model::{Annotation, Body, Creator, Motivation, Selector, Signature, Target};
