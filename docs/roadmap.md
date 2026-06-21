@@ -24,11 +24,11 @@ carries its resolving commit.
 | Milestone | Issue | Resolving commit | Status |
 |---|---|---|---|
 | M1 protocol-lib core | #2 | `ac38bbe` | closed ✅ |
-| M2 storage | #3 | `a5f30d9` | closed ✅ (SQLite mock added in #23, ADR 0015) |
+| M2 storage | #3 | `a5f30d9` | closed ✅ (SQLite mock added in #23, ADR 0016) |
 | M3 feedback-server | #4 | `099c978` | closed ✅ |
 | M4 cli-client | #5 | `98000ef` | closed ✅ |
 | M5 discovery-server | #6 | `347073b` | closed ✅ (NIP-65 outbox resolver added, ADR 0014) |
-| M6 collection-server | #7 | `dd997ad` | closed ✅ (cache freshness + validators, ADR 0012; persistent state in #23, ADR 0015) |
+| M6 collection-server | #7 | `dd997ad` | closed ✅ (cache freshness + validators, ADR 0012; persistent state in #23, ADR 0016) |
 | M7 advanced-client | #8 | `1a70947` | closed ✅ (negentropy deferred) |
 | M9 equivalence prompt | #10 | `feeebbd` | closed ✅ (prompt-only by scope) |
 | M8 widgets/extension/demo | #9 | `bba88dc` | closed ✅ (WebCrypto signing + scalar/tag added, ADR 0013) |
@@ -56,7 +56,7 @@ sync semantics.
 - **Acceptance:** put is idempotent by dedup id; `query` pages; `sync(gt_iat)`
   returns strictly newer; `latest_edits_only` collapses per (issuer, target). ✅
   (shared `conformance::run` suite; all three backends green. SQLite mock added
-  in #23, ADR 0015.)
+  in #23, ADR 0016.)
 
 ### M3 — feedback-server (axum) ✅ [#component-1]
 POST-to-container (WAP), paginated reads (`AnnotationPage` + `Link` rels),
@@ -108,7 +108,7 @@ union-find — see note); `POST /equivalence`.
   `Cache-Control: max-age` freshness (reuse a fresh page with **no** upstream
   request) and the `Last-Modified`/`If-Modified-Since` validator are now honored
   end-to-end (ADR 0012). Persistent servers/index/equivalence across restarts
-  (opt-in redb backing, `FREEDBACK_STATE_PATH`) added in #23, ADR 0015.
+  (opt-in redb backing, `FREEDBACK_STATE_PATH`) added in #23, ADR 0016.
 
 ### M7 — advanced-client (local sync copy) ✅ [#component-6]
 Local redb store keyed by dedup id; resume cursor per (server, target);

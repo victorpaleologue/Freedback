@@ -1,4 +1,4 @@
-# ADR 0015 — Storage durability: SQLite mock + persistent collection state
+# ADR 0016 — Storage durability: SQLite mock + persistent collection state
 
 - **Status:** accepted
 - **Date:** 2026-06-21
