@@ -13,6 +13,23 @@ M1 protocol-lib core ─┬─► M2 storage ─┬─► M3 feedback-server ─
                                                                                                                 M10 deployment + Pages
 ```
 
+## Resolved-by map (commit ↔ issue)
+
+One self-contained, green commit per milestone. We don't open PRs on this branch,
+so this table (and a comment on each GitHub issue) is the traceability record.
+
+| Milestone | Issue | Resolving commit | Status |
+|---|---|---|---|
+| M1 protocol-lib core | #2 | `ac38bbe` | closed ✅ |
+| M2 storage | #3 | `a5f30d9` | closed ✅ (SQLite mock deferred) |
+| M3 feedback-server | #4 | `099c978` | closed ✅ |
+| M4 cli-client | #5 | `98000ef` | closed ✅ |
+| M5 discovery-server | #6 | `347073b` | closed ✅ (NIP-65 resolver deferred) |
+
+**Convention going forward:** each milestone lands as one commit whose message
+names the milestone; on completion, comment the commit SHA on the issue and add
+the row here before closing it.
+
 ## Milestones / issues
 
 ### M1 — `protocol-lib` core ✅ (done on this branch)
