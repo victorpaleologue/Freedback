@@ -16,7 +16,10 @@ name = "freedback-feedback-server"
 path = "src/main.rs"
 
 [dependencies]
-freedback-protocol = { path = "../protocol-lib" }
+# `jsonld` enables full compaction of arbitrary third-party `@context`s on
+# ingest (ADR 0011); the server falls back to it when the fast alias normalizer
+# cannot resolve a document's terms.
+freedback-protocol = { path = "../protocol-lib", features = ["jsonld"] }
 freedback-storage = { path = "../storage" }
 axum = { workspace = true }
 tokio = { workspace = true, features = ["time", "signal"] }

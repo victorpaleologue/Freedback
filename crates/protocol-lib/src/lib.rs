@@ -19,9 +19,14 @@
 //! JSON-LD ingest is **primary**: [`jsonld::from_jsonld`] normalizes any
 //! conformant W3C Web Annotation serialization into the canonical model before
 //! the dedup id / signature are computed (ADR 0007), and the model → RDF mapping
-//! in [`rdf`] feeds SHACL. Both are pure Rust (native + `wasm32`). Full
-//! expansion of arbitrary third-party `@context`s via the `json-ld` crate is the
-//! documented extension.
+//! in [`rdf`] feeds SHACL. Both are pure Rust (native + `wasm32`).
+//!
+//! Documents that name the same concepts with a **third party's own
+//! `@context`** are handled by [`jsonld_full::normalize_full`] (the `jsonld`
+//! feature, native): it compacts the document against the pinned Freedback
+//! context via the real `json-ld` processor, so a foreign vocabulary
+//! content-addresses identically (ADR 0011). The server tries the fast alias
+//! normalizer first and falls back to full compaction.
 
 pub mod canonical;
 pub mod context;
@@ -31,6 +36,9 @@ pub mod identity;
 pub mod jsonld;
 pub mod model;
 pub mod rdf;
+
+#[cfg(feature = "jsonld")]
+pub mod jsonld_full;
 
 #[cfg(feature = "validation")]
 pub mod validation;

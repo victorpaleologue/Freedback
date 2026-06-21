@@ -154,8 +154,12 @@ shapes at stable `/ns/*` URLs (+ landing page). See `docs/deployment.md`.
   deterministic fixed keypairs + timestamps. (Lands with M5.)
 - **JSON-LD ingest** ✅ — **primary**, not interop: `protocol-lib::jsonld`
   normalizes any conformant serialization on every POST, making dedup ids and
-  signatures serialization-independent (ADR 0007). Remaining (#12): full
-  expansion of *arbitrary third-party `@context`s* via the `json-ld` crate.
+  signatures serialization-independent (ADR 0007). #12 ✅ — *arbitrary
+  third-party `@context`s* are now handled by `jsonld_full::normalize_full`,
+  which compacts against the pinned context via the `json-ld` crate so a foreign
+  vocabulary content-addresses identically (ADR 0011; the server tries the fast
+  normalizer first, falls back to full compaction). Remaining: a preloaded
+  loader for *remote* `@context` URLs (no network on the validation path today).
 - **Custom rating scales** ✅ — `freedback:ScalarRating` is validated against the
   body's own `worstRating`/`bestRating` via `sh:lessThanOrEquals` (SHACL Core, no
   SPARQL needed after all — ADR 0009). Stars/thumbs keep fixed canonical scales.

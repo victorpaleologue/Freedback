@@ -34,9 +34,18 @@ fn parse_annotations(value: Value) -> Result<Vec<Annotation>, ApiError> {
     // serialization (not just our exact serde shape) and normalize it to the
     // canonical model, so dedup ids / signatures are serialization-independent
     // (see protocol-lib::jsonld + ADR 0007).
-    let parse_one = |v: &Value| {
-        freedback_protocol::from_jsonld(v)
-            .map_err(|e| ApiError::bad_request(format!("invalid annotation: {e}")))
+    // Fast path: the alias normalizer resolves any serialization over the
+    // pinned Freedback/anno vocabulary. Fallback: a document whose terms come
+    // from a third party's own inline `@context` is compacted against our
+    // pinned context first (ADR 0011), so foreign vocabularies content-address
+    // identically. The fallback's error is only surfaced if it too fails.
+    let parse_one = |v: &Value| match freedback_protocol::from_jsonld(v) {
+        Ok(ann) => Ok(ann),
+        Err(fast_err) => freedback_protocol::jsonld_full::normalize_full(v).map_err(|full_err| {
+            ApiError::bad_request(format!(
+                "invalid annotation: {fast_err} (full compaction also failed: {full_err})"
+            ))
+        }),
     };
     match value {
         Value::Array(arr) => arr.iter().map(parse_one).collect(),
