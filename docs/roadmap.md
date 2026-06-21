@@ -32,7 +32,7 @@ carries its resolving commit.
 | M7 advanced-client | #8 | `1a70947` | closed ✅ (negentropy deferred) |
 | M9 equivalence prompt | #10 | `feeebbd` | closed ✅ (prompt-only by scope) |
 | M8 widgets/extension/demo | #9 | `bba88dc` | closed ✅ (WebCrypto signing + scalar/tag added, ADR 0013) |
-| M10 deployment (core) | #11 | `191d210` | open — musl/release/durable-store deferred |
+| M10 deployment | #11 | `191d210` | core ✅; musl + RocksDB + release pipeline in #11, ADR 0019 (custom domain pending registrar) |
 | Full JSON-LD (foreign `@context`) | #12 | `1503996` | closed ✅ (compaction, ADR 0011) |
 
 **Convention going forward:** each milestone lands as one commit whose message
@@ -181,13 +181,20 @@ builds the image, and a `pages.yml` workflow serving the `@context`/ontology/
 shapes at stable `/ns/*` URLs (+ landing page). See `docs/deployment.md`.
 - **Depends on:** M3 (a server to ship)
 - **Acceptance:** `docker compose up` boots all three servers; ontology served at
-  stable URLs by Pages; container build validated in CI. ✅ (core). **Deferred:**
-  musl static build via cargo-zigbuild, durable RocksDB backend, tagged release
-  pipeline (binaries + wasm pkg), and the `freedback.org` custom domain (pending
-  registrar — see `docs/naming.md`).
+  stable URLs by Pages; container build validated in CI. ✅
+  **Deployment hardening shipped (issue #11, ADR 0019):** the
+  `x86_64-unknown-linux-musl` static build via **cargo-zigbuild** (a CI job +
+  release artifacts; rustls everywhere → no OpenSSL); the **durable RocksDB
+  backend** as an opt-in `rocksdb` feature (`OxigraphStore::open`, selected via
+  `FREEDBACK_ROCKSDB_PATH`, `--build-arg FEEDBACK_FEATURES=rocksdb`); and a
+  **tagged release pipeline** (`release.yml`: `v*` tag → musl binaries + wasm
+  package on the GitHub Release). **Still external/deferred:** the
+  `freedback.org` Pages custom domain (pending registrar — see `docs/naming.md`).
 
 ## Cross-cutting issues
-- **CI** ✅ — fmt, clippy, native test, wasm32 build, ontology parse checks.
+- **CI** ✅ — fmt, clippy, native test, wasm32 build, `x86_64-linux-musl` static
+  build, widgets unit + headless E2E, ontology parse checks; `release.yml`
+  publishes musl + wasm artifacts on tags.
 - **Test harness** — `TestCluster` (in-process axum apps on ephemeral ports);
   deterministic fixed keypairs + timestamps. (Lands with M5.)
 - **JSON-LD ingest** ✅ — **primary**, not interop: `protocol-lib::jsonld`

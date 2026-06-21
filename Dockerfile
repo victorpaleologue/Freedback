@@ -10,11 +10,20 @@ WORKDIR /app
 
 # Cache dependencies first if the build context allows; here we just copy all.
 COPY . .
+# Opt-in durable storage: `docker build --build-arg FEEDBACK_FEATURES=rocksdb .`
+# builds the feedback server with the on-disk Oxigraph/RocksDB backend (selected
+# at run time via FREEDBACK_ROCKSDB_PATH). Empty (default) keeps the lightweight
+# in-memory demo image. The `rust` image ships a C/C++ toolchain, so oxrocksdb-sys
+# builds without extra packages.
+ARG FEEDBACK_FEATURES=""
 # Build only the server binaries (clients aren't needed in the server image).
+# The discovery/collection servers have no `rocksdb` feature, so only the
+# feedback server takes the optional features.
 RUN cargo build --release \
-    -p freedback-feedback-server \
-    -p freedback-discovery-server \
-    -p freedback-collection-server
+        -p freedback-discovery-server \
+        -p freedback-collection-server \
+    && cargo build --release -p freedback-feedback-server \
+        ${FEEDBACK_FEATURES:+--features "$FEEDBACK_FEATURES"}
 
 FROM debian:bookworm-slim AS runtime
 # ca-certificates: the discovery/collection servers make outbound HTTPS calls.

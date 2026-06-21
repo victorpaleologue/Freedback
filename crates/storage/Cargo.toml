@@ -17,6 +17,9 @@ default = ["oxigraph"]
 oxigraph = ["dep:oxigraph"]
 # SQLite-backed durable mock (rusqlite, bundled C dep — NATIVE ONLY, never wasm).
 sqlite = ["dep:rusqlite"]
+# Durable on-disk Oxigraph backend (RocksDB). Pulls oxrocksdb-sys, which needs a
+# C/C++ toolchain (Clang) to build — NATIVE ONLY, deployment opt-in, never wasm.
+rocksdb = ["oxigraph/rocksdb"]
 
 [dependencies]
 freedback-protocol = { path = "../protocol-lib" }

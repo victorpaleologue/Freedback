@@ -8,6 +8,13 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+default = []
+# Durable on-disk RocksDB store, selected at runtime via `FREEDBACK_ROCKSDB_PATH`.
+# Native/deployment opt-in: pulls oxrocksdb-sys, which needs a C/C++ toolchain
+# (Clang) to build. The default build stays in-memory (+ JSON-Lines snapshot).
+rocksdb = ["freedback-storage/rocksdb"]
+
 [lib]
 name = "freedback_feedback_server"
 
