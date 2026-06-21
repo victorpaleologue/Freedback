@@ -15,8 +15,11 @@ M1 protocol-lib core ─┬─► M2 storage ─┬─► M3 feedback-server ─
 
 ## Resolved-by map (commit ↔ issue)
 
-One self-contained, green commit per milestone. We don't open PRs on this branch,
-so this table (and a comment on each GitHub issue) is the traceability record.
+The initial milestones M1–M10 landed as one self-contained commit each (table
+below) and were brought onto `main` together in PR #14. **Subsequent work now
+ships as focused PRs** validated by CI and merged when green (e.g. #15 JSON-LD
+primary, #16 durable storage, custom rating scales). Each GitHub issue also
+carries its resolving commit.
 
 | Milestone | Issue | Resolving commit | Status |
 |---|---|---|---|
@@ -152,6 +155,6 @@ shapes at stable `/ns/*` URLs (+ landing page). See `docs/deployment.md`.
   normalizes any conformant serialization on every POST, making dedup ids and
   signatures serialization-independent (ADR 0007). Remaining (#12): full
   expansion of *arbitrary third-party `@context`s* via the `json-ld` crate.
-- **Custom rating scales** — a SHACL profile validating `ratingValue` against a
-  body's own `worstRating`/`bestRating` (needs SPARQL-based constraints; the
-  default profile uses fixed scales). See ADR 0004.
+- **Custom rating scales** ✅ — `freedback:ScalarRating` is validated against the
+  body's own `worstRating`/`bestRating` via `sh:lessThanOrEquals` (SHACL Core, no
+  SPARQL needed after all — ADR 0009). Stars/thumbs keep fixed canonical scales.

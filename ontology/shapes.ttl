@@ -60,7 +60,11 @@ freedback:StarRatingShape
         sh:message "star ratingValue must be a number in [1,5]" ;
     ] .
 
-# --- Scalar rating: continuous 0..1 -----------------------------------------
+# --- Scalar rating: continuous, on the body's OWN declared scale ------------
+# Unlike stars/thumbs (fixed scales), a scalar rating carries its own bounds, so
+# we validate worstRating <= ratingValue <= bestRating with sh:lessThanOrEquals
+# (SHACL Core, no SPARQL). See ADR 0009. The default scale is 0..1, but any
+# worst < best is accepted.
 
 freedback:ScalarRatingShape
     a sh:NodeShape ;
@@ -70,9 +74,24 @@ freedback:ScalarRatingShape
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:datatype xsd:double ;
-        sh:minInclusive 0 ;
-        sh:maxInclusive 1 ;
-        sh:message "scalar ratingValue must be a number in [0,1]" ;
+        sh:message "scalar ratingValue must be a single number" ;
+    ] ;
+    sh:property [
+        sh:path schema:worstRating ;
+        sh:minCount 1 ;
+        sh:datatype xsd:double ;
+        sh:lessThanOrEquals schema:ratingValue ;
+        sh:message "scalar worstRating must be <= ratingValue" ;
+    ] ;
+    sh:property [
+        sh:path schema:bestRating ;
+        sh:minCount 1 ;
+        sh:datatype xsd:double ;
+    ] ;
+    sh:property [
+        sh:path schema:ratingValue ;
+        sh:lessThanOrEquals schema:bestRating ;
+        sh:message "scalar ratingValue must be <= bestRating (within the declared scale)" ;
     ] .
 
 # --- Thumb rating: exactly 0 or 1 -------------------------------------------

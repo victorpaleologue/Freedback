@@ -86,6 +86,7 @@ The non-obvious decisions are written up as ADRs in [`docs/adr/`](./adr):
 - [0006 — Discovery: flat list first, resolver second](./adr/0006-discovery-flat-then-resolver.md)
 - [0007 — JSON-LD is primary on ingest, not interop](./adr/0007-jsonld-primary-ingest.md)
 - [0008 — Durable demo storage via JSON-Lines snapshots](./adr/0008-snapshot-persistence.md)
+- [0009 — Custom rating scales via `sh:lessThanOrEquals`](./adr/0009-custom-rating-scales.md)
 
 See [`roadmap.md`](./roadmap.md) for milestones and the issue map, and
 [`attributions.md`](./attributions.md) for harvested-code provenance.
