@@ -64,9 +64,16 @@ POST-to-container (WAP), paginated reads (`AnnotationPage` + `Link` rels),
 - **Acceptance:** signed-payload tamper rejected (401); SHACL-invalid → 422 +
   report; identical re-POST idempotent; OAuth bearer stamps app-scoped creator;
   paging emits `Link rel=canonical/type/next/prev` + `ETag`; `PUT /submit/{jwt}`
-  accepts the ES256 JWT export profile (ADR 0010). ✅ Remaining: full W3C
-  container conformance suite, batch partial-failure semantics, full Mangrove
-  review-schema mapping.
+  accepts the ES256 JWT export profile (ADR 0010). ✅ **Conformance hardening
+  shipped (issue #28, ADR 0018):** full W3C WAP/LDP container conformance
+  (`first`/`last`/`next`/`prev` `Link` rels, `Content-Type`/`Allow`/`Accept-Post`
+  headers, `Accept`→406 negotiation, `OPTIONS`/`HEAD`, empty/out-of-range edge
+  cases) with a dedicated `tests/conformance.rs` suite; **batch POST
+  partial-failure** semantics (a JSON array → `207 Multi-Status` per-item
+  outcomes, persist-valid-items policy); and the **full Mangrove review-schema
+  mapping** (`to_mangrove_jwt`/`from_mangrove_jwt`, `PUT /submit/mangrove/{jwt}`).
+  Remaining: Mangrove `metadata` demographics + `images{src,label}` round-trip
+  (deferred, see ADR 0018).
 
 ### M4 — cli-client (native + wasm) ✅ [#component-4]
 `read` / `write` / `sync`; distinguish collection points (read aggregates) from

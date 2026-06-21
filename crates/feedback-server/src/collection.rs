@@ -4,7 +4,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use axum::http::header::{CACHE_CONTROL, ETAG, LAST_MODIFIED, LINK};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, ETAG, LAST_MODIFIED, LINK};
 use axum::http::{HeaderMap, HeaderValue};
 use freedback_protocol::Annotation;
 use serde_json::{json, Value};
@@ -45,12 +45,28 @@ pub fn build_page(
 
     let has_next = page_size > 0 && start_index + items.len() < total;
     let has_prev = page > 0;
+    // Index of the last page (0-based). An empty collection still has a single
+    // page 0; otherwise it is ceil(total / page_size) - 1.
+    let last_page = if page_size == 0 || total == 0 {
+        0
+    } else {
+        total.div_ceil(page_size) - 1
+    };
 
     let mut body = json!({
         "@context": "http://www.w3.org/ns/anno.jsonld",
         "id": canonical,
         "type": "AnnotationPage",
-        "partOf": { "id": collection, "total": total },
+        // `partOf` is the LDP container (the `oa:AnnotationCollection`). Echoing
+        // `first`/`last` here lets a client navigate the whole collection from
+        // any page, mirroring the `Link` rels (W3C WAP §3.3.3).
+        "partOf": {
+            "id": collection,
+            "type": "AnnotationCollection",
+            "total": total,
+            "first": page_url(base, target, 0),
+            "last": page_url(base, target, last_page),
+        },
         "startIndex": start_index,
         "items": items,
     });
@@ -64,9 +80,15 @@ pub fn build_page(
     // ETag over (total, ids on this page) — stable across identical content.
     let etag = weak_etag(total, items);
 
+    // RFC 8288 / W3C WAP §3.3.3 navigation rels: always emit `first`/`last`
+    // (a single-page collection has first == last == canonical), plus
+    // `next`/`prev` when an adjacent page exists. `canonical` identifies the
+    // page; the LDP `type` rel marks it an `ldp:Page`.
     let mut links = vec![
         format!("<{canonical}>; rel=\"canonical\""),
         "<http://www.w3.org/ns/ldp#Page>; rel=\"type\"".to_string(),
+        format!("<{}>; rel=\"first\"", page_url(base, target, 0)),
+        format!("<{}>; rel=\"last\"", page_url(base, target, last_page)),
     ];
     if has_next {
         links.push(format!(
@@ -88,6 +110,15 @@ pub fn build_page(
     if let Ok(v) = HeaderValue::from_str(&etag) {
         headers.insert(ETAG, v);
     }
+    // The representation is profiled JSON-LD (the W3C anno context). Advertising
+    // the exact media type lets a content-negotiating client distinguish it from
+    // plain `application/json`.
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static(
+            "application/ld+json; profile=\"http://www.w3.org/ns/anno.jsonld\"",
+        ),
+    );
     // Freshness: a polite aggregator may reuse the page without revalidating
     // for `max-age` seconds.
     if let Ok(v) = HeaderValue::from_str(&format!("max-age={cache_max_age}")) {

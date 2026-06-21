@@ -27,9 +27,30 @@ impl ApiError {
     pub fn not_found(msg: impl Into<String>) -> Self {
         ApiError::Status(StatusCode::NOT_FOUND, msg.into())
     }
+    /// 406 Not Acceptable (content negotiation failed).
+    pub fn not_acceptable(msg: impl Into<String>) -> Self {
+        ApiError::Status(StatusCode::NOT_ACCEPTABLE, msg.into())
+    }
     /// 500 Internal Server Error.
     pub fn internal(msg: impl Into<String>) -> Self {
         ApiError::Status(StatusCode::INTERNAL_SERVER_ERROR, msg.into())
+    }
+
+    /// Render this error as a `(status, json-object)` pair for inclusion as one
+    /// item in a multi-status batch response. The object mirrors the standalone
+    /// error body: a SHACL failure carries its `report`, others a flat `error`.
+    pub fn as_item(&self) -> (StatusCode, serde_json::Value) {
+        match self {
+            ApiError::Status(code, msg) => (*code, json!({ "error": msg })),
+            ApiError::Validation(violations) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({
+                    "error": "SHACL validation failed",
+                    "conformsTo": "https://freedback.org/profile/1",
+                    "report": { "conforms": false, "violations": violations },
+                }),
+            ),
+        }
     }
 }
 

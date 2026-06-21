@@ -59,31 +59,51 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
         .strip_prefix("Bearer ")
 }
 
+/// Resolve an OAuth bearer (if present) to an [`Authz`].
+///
+/// * `Ok(Some(authz))` — a valid bearer token.
+/// * `Ok(None)` — no bearer header at all (the caller should fall back to
+///   self-signature checks).
+/// * `Err(..)` — a bearer header is present but the token is unknown (fatal).
+pub fn oauth_authz(oauth: &OAuth, headers: &HeaderMap) -> Result<Option<Authz>, ApiError> {
+    match bearer(headers) {
+        Some(token) => match oauth.lookup(token) {
+            Some((app_id, user_id)) => Ok(Some(Authz::OAuth {
+                app_id: app_id.clone(),
+                user_id: user_id.clone(),
+            })),
+            None => Err(ApiError::unauthorized("invalid bearer token")),
+        },
+        None => Ok(None),
+    }
+}
+
+/// Authorize a single annotation by its own self-signature (no bearer).
+/// Used by the batch path so one bad signature fails only its own item.
+pub fn authorize_one_self_signed(ann: &Annotation) -> Result<Authz, ApiError> {
+    if ann.signature.is_none() {
+        return Err(ApiError::unauthorized(
+            "no bearer token and annotation is unsigned",
+        ));
+    }
+    verify_annotation(ann).map_err(|_| ApiError::unauthorized("signature verification failed"))?;
+    Ok(Authz::SelfSigned)
+}
+
 /// Authorize a batch of annotations. OAuth bearer takes precedence; otherwise
-/// every annotation must carry a valid self-signature.
+/// every annotation must carry a valid self-signature. This is the all-or-
+/// nothing gate used by the single-item POST path; the batch path authorizes
+/// per item (see [`oauth_authz`] / [`authorize_one_self_signed`]).
 pub fn authorize(
     oauth: &OAuth,
     headers: &HeaderMap,
     anns: &[Annotation],
 ) -> Result<Authz, ApiError> {
-    if let Some(token) = bearer(headers) {
-        return match oauth.lookup(token) {
-            Some((app_id, user_id)) => Ok(Authz::OAuth {
-                app_id: app_id.clone(),
-                user_id: user_id.clone(),
-            }),
-            None => Err(ApiError::unauthorized("invalid bearer token")),
-        };
+    if let Some(authz) = oauth_authz(oauth, headers)? {
+        return Ok(authz);
     }
-
     for ann in anns {
-        if ann.signature.is_none() {
-            return Err(ApiError::unauthorized(
-                "no bearer token and annotation is unsigned",
-            ));
-        }
-        verify_annotation(ann)
-            .map_err(|_| ApiError::unauthorized("signature verification failed"))?;
+        authorize_one_self_signed(ann)?;
     }
     Ok(Authz::SelfSigned)
 }
