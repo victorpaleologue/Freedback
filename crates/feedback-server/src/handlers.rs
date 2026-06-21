@@ -250,7 +250,7 @@ pub async fn get_sync(
 
 /// `GET /.well-known/freedback` — capabilities self-description.
 pub async fn well_known(State(state): State<AppState>) -> Json<Value> {
-    Json(json!({
+    let mut doc = json!({
         "version": env!("CARGO_PKG_VERSION"),
         "protocol": "freedback/1",
         "formats": ["application/ld+json"],
@@ -261,5 +261,11 @@ pub async fn well_known(State(state): State<AppState>) -> Json<Value> {
             { "rel": "http://www.w3.org/ns/oa#annotationService",
               "href": format!("{}/annotations/", state.base_url) }
         ]
-    }))
+    });
+    // Optionally advertise the server-identity public key so a discovery
+    // registry can corroborate a signed announce against it.
+    if let Some(key) = &state.server_key_pem {
+        doc["key"] = json!(key);
+    }
+    Json(doc)
 }

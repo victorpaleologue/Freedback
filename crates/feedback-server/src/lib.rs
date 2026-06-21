@@ -40,6 +40,12 @@ pub struct AppState {
     /// so a polite aggregator can serve from its cache without revalidating
     /// while the page is still fresh.
     pub cache_max_age: u64,
+    /// Optional server-identity public key (P-256 SPKI PEM). When set it is
+    /// published in `/.well-known/freedback` as `"key"`, letting a discovery
+    /// registry corroborate a **signed announce** (the announce signature's key
+    /// must match this published key). `None` keeps the legacy behavior where
+    /// announce is authenticated by the well-known fetch alone.
+    pub server_key_pem: Option<String>,
 }
 
 impl AppState {
@@ -52,7 +58,15 @@ impl AppState {
             oauth: Arc::new(OAuth::default()),
             page_size: 50,
             cache_max_age: 30,
+            server_key_pem: None,
         }
+    }
+
+    /// Publish a server-identity public key (P-256 SPKI PEM) in the well-known,
+    /// enabling signed-announce corroboration at a discovery registry.
+    pub fn with_server_key_pem(mut self, pem: impl Into<String>) -> Self {
+        self.server_key_pem = Some(pem.into());
+        self
     }
 
     /// Override the collection `Cache-Control: max-age` (builder style).
