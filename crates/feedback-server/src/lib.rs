@@ -101,11 +101,18 @@ pub fn build_app(state: AppState) -> Router {
     let router = Router::new()
         .route(
             "/annotations/",
-            post(handlers::post_annotations).get(handlers::get_collection),
+            // GET (and HEAD, auto-derived by axum) reads the paged collection;
+            // POST writes; OPTIONS advertises the container's methods/`Allow`.
+            post(handlers::post_annotations)
+                .get(handlers::get_collection)
+                .options(handlers::options_container),
         )
         .route("/annotations/by-id", post(handlers::post_by_id))
         .route("/annotations/{id}", get(handlers::get_one))
+        // Freedback-annotation JWT (payload = our annotation, ADR 0010).
         .route("/submit/{jwt}", put(handlers::submit))
+        // Mangrove review-schema JWT (sub/rating/opinion → annotation).
+        .route("/submit/mangrove/{jwt}", put(handlers::submit_mangrove))
         .route("/sync", get(handlers::get_sync))
         .route("/negentropy", post(handlers::post_negentropy))
         .route("/.well-known/freedback", get(handlers::well_known))

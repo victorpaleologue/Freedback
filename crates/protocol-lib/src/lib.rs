@@ -34,6 +34,7 @@ pub mod error;
 pub mod export;
 pub mod identity;
 pub mod jsonld;
+pub mod mangrove;
 pub mod model;
 pub mod negentropy;
 pub mod rdf;
@@ -49,6 +50,7 @@ pub use error::{Error, Result};
 pub use export::{from_jwt, to_jwt};
 pub use identity::{verify_annotation, Identity};
 pub use jsonld::from_jsonld;
+pub use mangrove::{from_mangrove_jwt, to_mangrove_jwt};
 pub use model::{Annotation, Body, Creator, Motivation, Selector, Signature, Target};
 pub use negentropy::{Item, Message, RangeMsg, Reconcile};
 
