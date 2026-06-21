@@ -45,7 +45,12 @@
       for (const [tag, id, extra] of kinds) {
         const el = document.createElement(tag);
         el.id = id;
-        el.setAttribute("data-target", target);
+        // Isolate each widget kind on its own target. The rating widgets
+        // (stars/scalar/thumb) all aggregate over any `*Rating` body via
+        // `ratingValue`, so sharing one target would make the thumb count a
+        // star/scalar rating (and vice-versa). A per-kind fragment keeps each
+        // aggregate independent — matching the "isolated targets" intent.
+        el.setAttribute("data-target", target + "#" + id);
         if (read) el.setAttribute("data-read", read);
         if (feedback) el.setAttribute("data-publish", feedback);
         for (const [k, v] of Object.entries(extra)) el.setAttribute(k, v);
