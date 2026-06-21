@@ -170,8 +170,11 @@ shapes at stable `/ns/*` URLs (+ landing page). See `docs/deployment.md`.
   third-party `@context`s* are now handled by `jsonld_full::normalize_full`,
   which compacts against the pinned context via the `json-ld` crate so a foreign
   vocabulary content-addresses identically (ADR 0011; the server tries the fast
-  normalizer first, falls back to full compaction). Remaining: a preloaded
-  loader for *remote* `@context` URLs (no network on the validation path today).
+  normalizer first, falls back to full compaction). #24 ✅ — *remote* `@context`
+  URLs now resolve too, via a **preloaded allowlist loader** seeded with the
+  well-known contexts bundled at compile time (`ontology/vendor/`: the W3C anno
+  context + a curated schema.org rating subset); every other URL is refused, so
+  there is still no network I/O on the validation path.
 - **Custom rating scales** ✅ — `freedback:ScalarRating` is validated against the
   body's own `worstRating`/`bestRating` via `sh:lessThanOrEquals` (SHACL Core, no
   SPARQL needed after all — ADR 0009). Stars/thumbs keep fixed canonical scales.

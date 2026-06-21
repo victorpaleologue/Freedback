@@ -86,3 +86,7 @@ jobs:
           rapper -i turtle -c ontology/shapes.ttl
       - name: Validate JSON-LD context is well-formed JSON
         run: jq -e . ontology/context.jsonld > /dev/null
+      - name: Validate vendored well-known contexts are well-formed JSON
+        run: |
+          jq -e . ontology/vendor/anno.jsonld > /dev/null
+          jq -e . ontology/vendor/schema-rating.jsonld > /dev/null
