@@ -7,6 +7,7 @@ members = [
     "crates/cli-client",
     "crates/discovery-server",
     "crates/collection-server",
+    "crates/advanced-client",
 ]
 
 [workspace.package]

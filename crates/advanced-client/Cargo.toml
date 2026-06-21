@@ -1,0 +1,33 @@
+[package]
+name = "freedback-advanced-client"
+description = "Freedback advanced client: a local sync copy with resume cursors and dedup-on-merge."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "freedback_advanced_client"
+
+[[bin]]
+name = "freedback-sync"
+path = "src/main.rs"
+
+[dependencies]
+freedback-protocol = { path = "../protocol-lib", default-features = false }
+freedback-cli-client = { path = "../cli-client", default-features = false, features = ["native"] }
+redb = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[dev-dependencies]
+freedback-feedback-server = { path = "../feedback-server" }
+freedback-storage = { path = "../storage" }
+axum = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }

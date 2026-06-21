@@ -93,13 +93,15 @@ union-find — see note); `POST /equivalence`.
   trivially testable; SPARQL remains an option behind the same API). Remaining:
   `Cache-Control`/`Last-Modified` honoring, persistent index.
 
-### M7 — advanced-client (local sync copy) [#component-6]
+### M7 — advanced-client (local sync copy) ✅ [#component-6]
 Local redb store keyed by dedup id; resume cursor per (server, target);
-dedup-on-merge; optional negentropy reconciliation for backdated items.
+dedup-on-merge with edit supersession; `reconcile_full` for backdated items.
 - **Depends on:** M4, M6
 - **Acceptance:** second sync transfers only `iat > cursor`; no-op when nothing
   new; duplicates from two servers collapse; backdated insert eventually
-  reconciled.
+  reconciled. ✅ (1 unit + 3 integration tests; `freedback-sync` CLI). **Note:**
+  backdated reconciliation uses a full pull as a stand-in for negentropy
+  (NIP-77) — the efficient range-based protocol remains future work.
 
 ### M8 — widgets + Firefox extension + interop demo [#components-3,9,5]
 Drop-in Web Components (stars/scalar/thumb/comment/tag) importing the wasm
