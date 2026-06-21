@@ -4,10 +4,15 @@
 //! A server announces its URL; the registry **verifies by fetching that
 //! server's `/.well-known/freedback`** (RFC 8615) — it never trusts the POSTed
 //! URL on its own. `GET /resolve?target=` returns the announced servers that
-//! actually hold feedback for a URI (the flat-list model; a NIP-65-style
-//! resolver is a later refinement, see the roadmap).
+//! actually hold feedback for a URI (the flat-list model).
+//!
+//! On top of that flat model sits a NIP-65-style **outbox** resolver
+//! ([`relays`], ADR 0014): an issuer publishes a self-signed [`relays::RelayList`]
+//! declaring which servers it writes to / reads from, so `GET /resolve?issuer=`
+//! returns where that key's feedback lives without fanning out across the
+//! registry.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::{Query, State};
@@ -17,10 +22,15 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::trace::TraceLayer;
 
+pub mod relays;
+use relays::RelayList;
+
 /// Shared registry state.
 #[derive(Clone)]
 pub struct AppState {
     servers: Arc<Mutex<BTreeSet<String>>>,
+    /// NIP-65-style relay lists, keyed by issuer id (replaceable, newest wins).
+    relays: Arc<Mutex<HashMap<String, RelayList>>>,
     http: reqwest::Client,
     base_url: String,
 }
@@ -30,6 +40,7 @@ impl AppState {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             servers: Arc::new(Mutex::new(BTreeSet::new())),
+            relays: Arc::new(Mutex::new(HashMap::new())),
             http: reqwest::Client::new(),
             base_url: base_url.into(),
         }
@@ -46,6 +57,7 @@ pub fn build_app(state: AppState) -> Router {
     Router::new()
         .route("/announce", post(announce))
         .route("/servers", get(servers))
+        .route("/relays", post(post_relays).get(get_relays))
         .route("/resolve", get(resolve))
         .route("/.well-known/freedback", get(well_known))
         .layer(TraceLayer::new_for_http())
@@ -102,21 +114,98 @@ async fn servers(State(state): State<AppState>) -> Json<Value> {
     Json(json!({ "servers": state.servers() }))
 }
 
+/// `POST /relays` — publish a self-signed NIP-65-style relay list.
+///
+/// The registry verifies the issuer's signature (and the issuer/key binding)
+/// before storing; it never takes an issuer's claimed servers on faith. The
+/// record is replaceable: a newer `updated` supersedes an older one.
+async fn post_relays(
+    State(state): State<AppState>,
+    Json(list): Json<RelayList>,
+) -> Result<Json<Value>, (axum::http::StatusCode, Json<Value>)> {
+    let reject = |msg: String| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({ "error": msg })),
+        )
+    };
+
+    list.verify().map_err(reject)?;
+
+    let mut relays = state.relays.lock().unwrap();
+    if let Some(existing) = relays.get(&list.issuer) {
+        // Replaceable: keep the newer record (ignore stale re-publishes).
+        if existing.updated >= list.updated {
+            return Ok(Json(
+                json!({ "ok": true, "issuer": list.issuer, "stored": false, "reason": "not newer" }),
+            ));
+        }
+    }
+    let issuer = list.issuer.clone();
+    relays.insert(issuer.clone(), list);
+    Ok(Json(
+        json!({ "ok": true, "issuer": issuer, "stored": true }),
+    ))
+}
+
+#[derive(Deserialize)]
+struct RelayQuery {
+    issuer: String,
+}
+
+/// `GET /relays?issuer=` — the stored signed relay list for an issuer.
+async fn get_relays(
+    State(state): State<AppState>,
+    Query(q): Query<RelayQuery>,
+) -> Result<Json<RelayList>, (axum::http::StatusCode, Json<Value>)> {
+    state
+        .relays
+        .lock()
+        .unwrap()
+        .get(&q.issuer)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(json!({ "error": "no relay list for issuer" })),
+            )
+        })
+}
+
 #[derive(Deserialize)]
 struct ResolveParams {
-    target: String,
+    target: Option<String>,
+    issuer: Option<String>,
 }
 
 /// `GET /resolve?target=` — announced servers that actually hold feedback for
 /// the target (verified live against each server's collection).
+///
+/// `GET /resolve?issuer=` — the **outbox** resolution: the servers the issuer
+/// declared it writes to (from its signed relay list), with no fan-out polling.
 async fn resolve(State(state): State<AppState>, Query(p): Query<ResolveParams>) -> Json<Value> {
+    if let Some(issuer) = p.issuer {
+        let write = state
+            .relays
+            .lock()
+            .unwrap()
+            .get(&issuer)
+            .map(|rl| rl.write.clone())
+            .unwrap_or_default();
+        return Json(json!({ "issuer": issuer, "servers": write }));
+    }
+
+    let Some(target) = p.target else {
+        return Json(json!({ "error": "provide target= or issuer=" }));
+    };
     let mut holders = Vec::new();
     for server in state.servers() {
-        if server_has_target(&state.http, &server, &p.target).await {
+        if server_has_target(&state.http, &server, &target).await {
             holders.push(server);
         }
     }
-    Json(json!({ "target": p.target, "servers": holders }))
+    Json(json!({ "target": target, "servers": holders }))
 }
 
 async fn server_has_target(http: &reqwest::Client, server: &str, target: &str) -> bool {
@@ -143,11 +232,12 @@ async fn well_known(State(state): State<AppState>) -> Json<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "protocol": "freedback/1",
         "formats": ["application/ld+json"],
-        "capabilities": ["discovery-registry"],
+        "capabilities": ["discovery-registry", "relay-list"],
         "conformsTo": "https://freedback.org/profile/1",
         "links": [
             { "rel": "self", "href": format!("{}/.well-known/freedback", state.base_url) },
-            { "rel": "servers", "href": format!("{}/servers", state.base_url) }
+            { "rel": "servers", "href": format!("{}/servers", state.base_url) },
+            { "rel": "relays", "href": format!("{}/relays", state.base_url) }
         ]
     }))
 }
