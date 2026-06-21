@@ -26,13 +26,19 @@ fn signed(target: &str, stars: f64) -> Annotation {
 }
 
 async fn spawn_feedback(seed: &[Annotation]) -> String {
+    spawn_feedback_maxage(seed, 30).await
+}
+
+/// Spawn a feedback server advertising a specific `Cache-Control: max-age`.
+/// `max_age = 0` disables freshness, forcing the aggregator to revalidate.
+async fn spawn_feedback_maxage(seed: &[Annotation], max_age: u64) -> String {
     let store = Arc::new(MemoryStore::new());
     for ann in seed {
         store.put(ann).await.unwrap();
     }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let app = build_fb(FbState::new(store, base.clone()));
+    let app = build_fb(FbState::new(store, base.clone()).with_cache_max_age(max_age));
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
@@ -106,7 +112,9 @@ async fn duplicate_annotation_across_servers_collapses() {
 
 #[tokio::test]
 async fn repeated_query_revalidates_with_304() {
-    let fb_a = spawn_feedback(&[signed(A, 4.0)]).await;
+    // max-age=0 disables freshness, so the aggregator must revalidate (and the
+    // upstream answers 304 by ETag / If-Modified-Since).
+    let fb_a = spawn_feedback_maxage(&[signed(A, 4.0)], 0).await;
     let (col, state) = spawn_collection(RateLimit::default()).await;
     state.add_server(&fb_a);
     let http = reqwest::Client::new();
@@ -132,8 +140,50 @@ async fn repeated_query_revalidates_with_304() {
 }
 
 #[tokio::test]
+async fn fresh_cache_serves_without_any_upstream_call() {
+    // A generous max-age means the aggregator reuses the cached page without
+    // revalidating — not even a conditional 304 — while it is fresh.
+    let fb_a = spawn_feedback_maxage(&[signed(A, 4.0)], 300).await;
+    let (col, state) = spawn_collection(RateLimit::default()).await;
+    state.add_server(&fb_a);
+    let http = reqwest::Client::new();
+
+    for _ in 0..4 {
+        let idx: Value = http
+            .get(format!("{col}/index?target={A}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(idx["total"], 1);
+    }
+
+    assert_eq!(
+        state.upstream_calls(),
+        1,
+        "only the first (cache-filling) query should reach upstream, got {}",
+        state.upstream_calls()
+    );
+    assert_eq!(
+        state.upstream_304(),
+        0,
+        "a fresh entry must not even revalidate, got {} 304s",
+        state.upstream_304()
+    );
+    assert!(
+        state.cache_hits() >= 3,
+        "subsequent reads should be served from the fresh cache, got {} hits",
+        state.cache_hits()
+    );
+}
+
+#[tokio::test]
 async fn rate_limiter_caps_upstream_bursts() {
-    let fb_a = spawn_feedback(&[signed(A, 4.0)]).await;
+    // max-age=0 so every query must revalidate (and thus spend a token) — this
+    // isolates the rate limiter from the freshness short-circuit.
+    let fb_a = spawn_feedback_maxage(&[signed(A, 4.0)], 0).await;
     // Hard cap: 2 tokens, no refill.
     let (col, state) = spawn_collection(RateLimit {
         capacity: 2.0,

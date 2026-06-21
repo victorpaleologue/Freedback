@@ -28,11 +28,12 @@ carries its resolving commit.
 | M3 feedback-server | #4 | `099c978` | closed ✅ |
 | M4 cli-client | #5 | `98000ef` | closed ✅ |
 | M5 discovery-server | #6 | `347073b` | closed ✅ (NIP-65 resolver deferred) |
-| M6 collection-server | #7 | `dd997ad` | closed ✅ (Cache-Control honoring deferred) |
+| M6 collection-server | #7 | `dd997ad` | closed ✅ (cache freshness + validators added, ADR 0012) |
 | M7 advanced-client | #8 | `1a70947` | closed ✅ (negentropy deferred) |
 | M9 equivalence prompt | #10 | `feeebbd` | closed ✅ (prompt-only by scope) |
 | M8 widgets/extension/demo | #9 | `bba88dc` | closed ✅ (core; WebCrypto/scalar/tag deferred) |
 | M10 deployment (core) | #11 | `191d210` | open — musl/release/durable-store deferred |
+| Full JSON-LD (foreign `@context`) | #12 | `1503996` | closed ✅ (compaction, ADR 0011) |
 
 **Convention going forward:** each milestone lands as one commit whose message
 names the milestone; on completion, comment the commit SHA on the issue and add
@@ -98,8 +99,10 @@ union-find — see note); `POST /equivalence`.
   budget caps upstream bursts. ✅ (6 unit + 4 cluster tests). Conditional GET was
   added to the feedback server. **Note:** equivalence uses a union-find rather
   than Oxigraph SPARQL property paths (same transitive closure, no dependency,
-  trivially testable; SPARQL remains an option behind the same API). Remaining:
-  `Cache-Control`/`Last-Modified` honoring, persistent index.
+  trivially testable; SPARQL remains an option behind the same API).
+  `Cache-Control: max-age` freshness (reuse a fresh page with **no** upstream
+  request) and the `Last-Modified`/`If-Modified-Since` validator are now honored
+  end-to-end (ADR 0012). Remaining: persistent index/cache across restarts.
 
 ### M7 — advanced-client (local sync copy) ✅ [#component-6]
 Local redb store keyed by dedup id; resume cursor per (server, target);
