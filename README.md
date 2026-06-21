@@ -23,7 +23,8 @@ green on **native + wasm32**:
 - ✅ Storage trait + in-memory and Oxigraph backends (shared conformance suite)
 - ✅ Feedback server (axum): WAP container, paging, `/sync`, dual auth, well-known
 - ✅ Basic client (native + wasm32): read / write / sync over endpoints & files
-- ⏳ Discovery / collection servers, widgets, extension —
+- ✅ Discovery server (registry): announce-with-verify + resolve (federation)
+- ⏳ Collection server, equivalence agent, widgets, extension —
   see [`docs/roadmap.md`](docs/roadmap.md)
 
 ## Quick start

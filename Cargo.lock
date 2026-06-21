@@ -444,6 +444,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "freedback-discovery-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "freedback-feedback-server",
+ "freedback-protocol",
+ "freedback-storage",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "freedback-feedback-server"
 version = "0.1.0"
 dependencies = [

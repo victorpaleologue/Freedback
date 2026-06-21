@@ -51,13 +51,16 @@ publication points (POST) as distinct types. `Transport` trait abstracts I/O
   write→read→sync against a live server + file read/append). WASM uses the core
   protocol-lib (no validation chain) per ADR 0004.
 
-### M5 — discovery-server (registry) [#component-2]
+### M5 — discovery-server (registry) ✅ [#component-2]
 `/.well-known/freedback` self-description; `POST /announce` with verifying
-fetch; `GET /servers`; `GET /resolve?target=`. Flat list first; NIP-65-style
-resolver behind the same interface.
-- **Depends on:** M3 (+ `TestCluster` harness comes online here)
-- **Acceptance:** announce rejected if well-known missing/invalid; registry
-  never trusts the POSTed URL without the verifying fetch.
+fetch; `GET /servers`; `GET /resolve?target=`. Flat list (NIP-65-style resolver
+is a later refinement).
+- **Depends on:** M3 (+ `TestCluster` harness now online)
+- **Acceptance:** announce rejected if well-known missing/invalid (verified
+  against a dead server and a 404 path); resolver returns the holding server for
+  a target; registry never trusts the POSTed URL without the verifying fetch. ✅
+  (2 cluster tests on real ephemeral ports). Remaining: NIP-65 resolver, server
+  liveness/expiry, signed announces.
 
 ### M6 — collection-server (aggregation) [#component-7]
 Multi-server cache with conditional requests (ETag/If-None-Match) + per-host
