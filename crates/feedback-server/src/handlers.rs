@@ -30,13 +30,17 @@ pub struct SyncParams {
 }
 
 fn parse_annotations(value: Value) -> Result<Vec<Annotation>, ApiError> {
-    let parse_one = |v: Value| {
-        serde_json::from_value::<Annotation>(v)
+    // JSON-LD ingest is primary: accept any conformant W3C Web Annotation
+    // serialization (not just our exact serde shape) and normalize it to the
+    // canonical model, so dedup ids / signatures are serialization-independent
+    // (see protocol-lib::jsonld + ADR 0007).
+    let parse_one = |v: &Value| {
+        freedback_protocol::from_jsonld(v)
             .map_err(|e| ApiError::bad_request(format!("invalid annotation: {e}")))
     };
     match value {
-        Value::Array(arr) => arr.into_iter().map(parse_one).collect(),
-        other => Ok(vec![parse_one(other)?]),
+        Value::Array(arr) => arr.iter().map(parse_one).collect(),
+        other => Ok(vec![parse_one(&other)?]),
     }
 }
 
