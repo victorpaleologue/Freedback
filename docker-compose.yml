@@ -1,0 +1,38 @@
+# The full Freedback stack in one command: `docker compose up`.
+# All three servers share one image; the collection server aggregates from the
+# feedback server over the compose network.
+
+services:
+  feedback:
+    build: .
+    image: freedback:dev
+    command: freedback-feedback-server
+    environment:
+      FREEDBACK_BIND: 0.0.0.0:8080
+      FREEDBACK_BASE_URL: http://localhost:8080
+    ports:
+      - "8080:8080"
+
+  discovery:
+    image: freedback:dev
+    command: freedback-discovery-server
+    environment:
+      FREEDBACK_BIND: 0.0.0.0:8090
+      FREEDBACK_BASE_URL: http://localhost:8090
+    ports:
+      - "8090:8090"
+    depends_on:
+      - feedback
+
+  collection:
+    image: freedback:dev
+    command: freedback-collection-server
+    environment:
+      FREEDBACK_BIND: 0.0.0.0:8100
+      FREEDBACK_BASE_URL: http://localhost:8100
+      # Aggregate from the feedback server (compose-internal hostname).
+      FREEDBACK_SERVERS: http://feedback:8080
+    ports:
+      - "8100:8100"
+    depends_on:
+      - feedback

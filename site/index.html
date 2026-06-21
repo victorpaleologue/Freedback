@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback — open feedback protocol</title>
+  <style>
+    body { font: 16px/1.6 system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1rem; color: #1a1a1a; }
+    code { background: #f3f3f3; padding: 0.1em 0.35em; border-radius: 4px; }
+    a { color: #0857c3; }
+    h1 { margin-bottom: 0; }
+    .sub { color: #555; margin-top: 0.25rem; }
+    ul { padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>Freedback</h1>
+  <p class="sub">A federated, open protocol for typed feedback on anything with a URI — carried as W3C Web Annotations.</p>
+
+  <h2>Protocol artifacts (stable URLs)</h2>
+  <ul>
+    <li><a href="ns/context.jsonld">JSON-LD <code>@context</code></a> — <code>/ns/context.jsonld</code></li>
+    <li><a href="ns/freedback.ttl">Vocabulary</a> — <code>/ns/freedback.ttl</code> (rating subclasses of <code>schema:Rating</code>)</li>
+    <li><a href="ns/shapes.ttl">SHACL shapes</a> — <code>/ns/shapes.ttl</code> (all validation lives here)</li>
+  </ul>
+
+  <h2>About</h2>
+  <p>Anyone can attach feedback (stars, scalar, thumbs, comments, tags) to any
+  resource, publish it to a server they choose, and have it discovered and
+  aggregated across servers — no central gatekeeper. Feedback is signed with a
+  portable key, so it is not locked inside the silo that collected it.</p>
+
+  <p>Source &amp; docs: <a href="https://github.com/victorpaleologue/Freedback">github.com/victorpaleologue/Freedback</a></p>
+</body>
+</html>

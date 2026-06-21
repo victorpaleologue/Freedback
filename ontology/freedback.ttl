@@ -1,0 +1,58 @@
+@prefix freedback: <https://freedback.org/ns#> .
+@prefix schema:    <http://schema.org/> .
+@prefix oa:        <http://www.w3.org/ns/oa#> .
+@prefix skos:      <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdfs:      <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:       <http://www.w3.org/2002/07/owl#> .
+@prefix dcterms:   <http://purl.org/dc/terms/> .
+
+#################################################################
+# Freedback vocabulary
+#
+# INVARIANT: this ontology declares STRUCTURE ONLY (subclass / motivation
+# relations). It MUST NOT encode validation rules — those live entirely in
+# shapes.ttl (SHACL). RDFS/OWL are open-world and monotonic; using them for
+# bounds/required would silently infer rather than reject. See
+# docs/adr/0004-validation-in-shacl.md.
+#################################################################
+
+<https://freedback.org/ns>
+    a owl:Ontology ;
+    rdfs:label "Freedback vocabulary" ;
+    rdfs:comment "Typed feedback bodies for W3C Web Annotations." ;
+    owl:versionInfo "1" ;
+    dcterms:conformsTo <https://freedback.org/profile/1> .
+
+# --- Typed rating bodies: all subclasses of schema:Rating (INVARIANT 2) ------
+
+freedback:StarRating
+    a rdfs:Class ;
+    rdfs:subClassOf schema:Rating ;
+    rdfs:label "Star rating" ;
+    rdfs:comment "A discrete star rating, by default on the 1..5 scale." .
+
+freedback:ScalarRating
+    a rdfs:Class ;
+    rdfs:subClassOf schema:Rating ;
+    rdfs:label "Scalar rating" ;
+    rdfs:comment "A continuous bounded rating, by default on the 0.0..1.0 scale." .
+
+# The only NET-NEW vocabulary term (everything else reuses schema.org / oa).
+freedback:ThumbRating
+    a rdfs:Class ;
+    rdfs:subClassOf schema:Rating ;
+    rdfs:label "Thumb rating" ;
+    rdfs:comment "A thumbs-up / thumbs-down rating: up = 1.0, down = 0.0 on a [0,1] scale." .
+
+# --- Motivations: rating assessment specializes oa:assessing -----------------
+# Comments and tags reuse oa:commenting / oa:tagging unchanged.
+
+freedback:rating
+    a oa:Motivation ;
+    skos:prefLabel "rating" ;
+    skos:broader oa:assessing ;
+    rdfs:comment "Assessment expressed as a typed numeric rating body." .
+
+# --- Graceful degradation hints for pure W3C / ActivityStreams consumers -----
+
+freedback:ThumbRating skos:closeMatch <http://www.w3.org/ns/activitystreams#Like> .

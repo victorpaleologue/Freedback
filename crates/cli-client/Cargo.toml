@@ -1,0 +1,44 @@
+[package]
+name = "freedback-cli-client"
+description = "Freedback basic client (native + wasm): read / write / sync over endpoints and files."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "freedback_cli_client"
+
+[[bin]]
+name = "freedback"
+path = "src/main.rs"
+
+[features]
+default = ["native"]
+# Native build: filesystem transport, CLI, and a TLS stack for reqwest.
+native = ["dep:clap", "dep:tokio", "dep:time", "reqwest/rustls-tls"]
+# Browser build: fetch transport (reqwest delegates to the Fetch API).
+wasm = ["freedback-protocol/wasm"]
+
+[dependencies]
+# The client does not validate locally (the server does), so it uses the core
+# protocol-lib without the native-only validation/RDF chain — keeping the wasm
+# build lean.
+freedback-protocol = { path = "../protocol-lib", default-features = false }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["rt-multi-thread", "macros", "fs"] }
+time = { workspace = true, optional = true }
+
+[dev-dependencies]
+freedback-feedback-server = { path = "../feedback-server" }
+freedback-storage = { path = "../storage" }
+axum = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+tempfile = "3"

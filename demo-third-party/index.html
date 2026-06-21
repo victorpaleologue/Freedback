@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback × W3C Web Annotation interop</title>
+  <style>
+    body { font: 15px/1.6 system-ui, sans-serif; max-width: 44rem; margin: 2rem auto; padding: 0 1rem; }
+    .ann { border: 1px solid #e2e2e2; border-radius: 8px; padding: .75rem 1rem; margin: .75rem 0; }
+    .mot { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #777; }
+    .typed { color: #0857c3; }
+    code { background: #f3f3f3; padding: .1em .35em; border-radius: 4px; }
+    .src { display: flex; gap: .25rem; margin: .5rem 0 1rem; }
+    .src input { flex: 1; padding: .3rem .5rem; }
+  </style>
+</head>
+<body>
+  <h1>Interop: a generic W3C consumer reading Freedback</h1>
+  <p>This page contains <strong>no Freedback-specific code</strong>. It treats the
+  response as a plain W3C Web Annotation collection. Comment and tag bodies render
+  natively; the net-new <code>freedback:*Rating</code> bodies show generically as
+  typed bodies — exactly how <a href="https://annotorious.dev/">Annotorious</a> or
+  <a href="https://recogito.github.io/recogitojs/">RecogitoJS</a> would treat them.</p>
+
+  <div class="src">
+    <input id="src" placeholder="collection page URL, e.g. http://localhost:8100/index?target=https://example.com/item/1" />
+    <button id="load">Load</button>
+  </div>
+
+  <div id="out"></div>
+
+  <script>
+    // A sample Freedback collection page (W3C AnnotationPage) so the demo works
+    // offline. Replace by loading a live collection/feedback server above.
+    const SAMPLE = {
+      "@context": "http://www.w3.org/ns/anno.jsonld",
+      type: "AnnotationPage",
+      partOf: { id: "http://example/annotations/", total: 3 },
+      items: [
+        { type: "Annotation", motivation: "commenting", target: "https://example.com/item/1",
+          body: [{ type: "TextualBody", value: "Works great for us.", purpose: "commenting" }] },
+        { type: "Annotation", motivation: "tagging", target: "https://example.com/item/1",
+          body: [{ type: "TextualBody", value: "recommended", purpose: "tagging" }] },
+        { type: "Annotation", motivation: "assessing", target: "https://example.com/item/1",
+          body: [{ type: ["freedback:StarRating", "schema:Rating"], "schema:ratingValue": 4 }] },
+      ],
+    };
+
+    function bodyView(b) {
+      const t = Array.isArray(b.type) ? b.type.join(", ") : b.type;
+      if (b.value != null) return `<div>${escapeHtml(b.value)} <span class="mot">(${escapeHtml(b.purpose || t)})</span></div>`;
+      if (b["schema:ratingValue"] != null) return `<div class="typed">typed body <code>${escapeHtml(t)}</code> = ${b["schema:ratingValue"]}</div>`;
+      return `<div class="typed">typed body <code>${escapeHtml(t)}</code></div>`;
+    }
+    function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+    function render(page) {
+      const items = Array.isArray(page) ? page : page.items || [];
+      document.getElementById("out").innerHTML = items.map((a) => {
+        const bodies = (Array.isArray(a.body) ? a.body : [a.body]).map(bodyView).join("");
+        return `<div class="ann"><div class="mot">${escapeHtml(a.motivation || "")} · ${escapeHtml(a.target.source || a.target)}</div>${bodies}</div>`;
+      }).join("");
+    }
+
+    document.getElementById("load").addEventListener("click", async () => {
+      const url = document.getElementById("src").value.trim();
+      if (!url) return;
+      try {
+        const resp = await fetch(url, { headers: { accept: "application/ld+json" } });
+        render(await resp.json());
+      } catch (e) {
+        document.getElementById("out").textContent = `Error: ${e.message || e}`;
+      }
+    });
+
+    render(SAMPLE);
+  </script>
+</body>
+</html>

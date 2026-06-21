@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/protocol-lib",
+    "crates/storage",
+    "crates/feedback-server",
+    "crates/cli-client",
+    "crates/discovery-server",
+    "crates/collection-server",
+    "crates/advanced-client",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+repository = "https://github.com/victorpaleologue/freedback"
+authors = ["Victor Paléologue and the Freedback contributors"]
+
+[workspace.dependencies]
+# --- Core serialization (dual-target) ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# RFC 8785 JSON Canonicalization Scheme — for deterministic dedup ids + detached JWS.
+serde_json_canonicalizer = "0.3"
+
+# --- Crypto / identity (dual-target, pure Rust) ---
+# Pinned to the stable 0.13 line of the RustCrypto stack (not the 0.14 pre-release).
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8", "std"] }
+sha2 = "0.10"
+base64 = "0.22"
+
+# --- RDF / JSON-LD / SHACL (see docs/adr/0004) ---
+oxigraph = { version = "0.5", default-features = false }
+json-ld = "0.21"
+# Lightweight, pure-Rust RDF data structures + Turtle/N-Triples parsers
+# (oxigraph project, wasm-capable). Used by the shapes-driven SHACL-Core-subset
+# validator in protocol-lib. See ADR 0004 for why not rudof's shacl_validation.
+oxrdf = "0.3"
+oxttl = "0.2"
+
+# --- HTTP (server native-only; client dual-target) ---
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+reqwest = { version = "0.12", default-features = false }
+http = "1"
+
+# --- Embedded stores ---
+rusqlite = { version = "0.32", features = ["bundled"] }
+redb = "2"
+
+# --- CLI / utils ---
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+
+# --- Test-only ---
+wiremock = "0.6"
+assert_cmd = "2"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+# Keep dev builds of the (heavy) RDF stack reasonably fast.
+[profile.dev.package."*"]
+opt-level = 1

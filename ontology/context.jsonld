@@ -1,0 +1,56 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "oa": "http://www.w3.org/ns/oa#",
+    "schema": "http://schema.org/",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "dcterms": "http://purl.org/dc/terms/",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "freedback": "https://freedback.org/ns#",
+
+    "id": "@id",
+    "type": "@type",
+
+    "Annotation": "oa:Annotation",
+    "TextualBody": "oa:TextualBody",
+
+    "motivation": { "@id": "oa:motivatedBy", "@type": "@vocab" },
+    "assessing": "oa:assessing",
+    "commenting": "oa:commenting",
+    "tagging": "oa:tagging",
+
+    "body": { "@id": "oa:hasBody", "@type": "@id" },
+    "target": { "@id": "oa:hasTarget", "@type": "@id" },
+    "source": { "@id": "oa:hasSource", "@type": "@id" },
+    "selector": { "@id": "oa:hasSelector", "@type": "@id" },
+    "TextQuoteSelector": "oa:TextQuoteSelector",
+    "TextPositionSelector": "oa:TextPositionSelector",
+    "exact": "oa:exact",
+    "prefix": "oa:prefix",
+    "suffix": "oa:suffix",
+    "start": { "@id": "oa:start", "@type": "xsd:nonNegativeInteger" },
+    "end": { "@id": "oa:end", "@type": "xsd:nonNegativeInteger" },
+    "purpose": { "@id": "oa:hasPurpose", "@type": "@vocab" },
+    "value": "rdf:value",
+    "format": "dcterms:format",
+
+    "creator": { "@id": "dcterms:creator", "@type": "@id" },
+    "created": { "@id": "dcterms:created", "@type": "xsd:dateTime" },
+    "conformsTo": { "@id": "dcterms:conformsTo", "@type": "@id" },
+
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+
+    "StarRating": "freedback:StarRating",
+    "ScalarRating": "freedback:ScalarRating",
+    "ThumbRating": "freedback:ThumbRating",
+    "ratingValue": { "@id": "schema:ratingValue", "@type": "xsd:double" },
+    "bestRating": { "@id": "schema:bestRating", "@type": "xsd:double" },
+    "worstRating": { "@id": "schema:worstRating", "@type": "xsd:double" },
+
+    "signature": { "@id": "freedback:signature" },
+    "alg": "freedback:alg",
+    "kid": "freedback:kid",
+    "sig": "freedback:sig"
+  }
+}

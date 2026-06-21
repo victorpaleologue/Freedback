@@ -1,0 +1,103 @@
+@prefix sh:        <http://www.w3.org/ns/shacl#> .
+@prefix freedback: <https://freedback.org/ns#> .
+@prefix schema:    <http://schema.org/> .
+@prefix oa:        <http://www.w3.org/ns/oa#> .
+@prefix rdf:       <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd:       <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:   <http://purl.org/dc/terms/> .
+
+#################################################################
+# Freedback SHACL shapes — profile https://freedback.org/profile/1
+#
+# ALL validation lives here (datatype, bounds, required, reject). This is the
+# single authority the feedback-server runs on write, before persistence.
+# SHACL Core only (no SHACL-SPARQL) so the rudof engine and any conformant
+# validator agree. See docs/adr/0004-validation-in-shacl.md.
+#
+# Bounds below assume the DEFAULT rating scales (stars 1..5, scalar 0..1,
+# thumb {0,1}). Custom scales are a future profile (see issues).
+#################################################################
+
+# --- The annotation envelope -------------------------------------------------
+
+freedback:AnnotationShape
+    a sh:NodeShape ;
+    sh:targetClass oa:Annotation ;
+    sh:property [
+        sh:path oa:hasTarget ;
+        sh:minCount 1 ;
+        sh:message "an annotation must have at least one target" ;
+    ] ;
+    sh:property [
+        sh:path oa:hasBody ;
+        sh:minCount 1 ;
+        sh:message "an annotation must have at least one body" ;
+    ] ;
+    sh:property [
+        sh:path oa:motivatedBy ;
+        sh:minCount 1 ;
+        sh:message "an annotation must declare a motivation" ;
+    ] ;
+    sh:property [
+        sh:path dcterms:created ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+        sh:message "created must be a single xsd:dateTime" ;
+    ] .
+
+# --- Star rating: discrete 1..5 ---------------------------------------------
+
+freedback:StarRatingShape
+    a sh:NodeShape ;
+    sh:targetClass freedback:StarRating ;
+    sh:property [
+        sh:path schema:ratingValue ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:double ;
+        sh:minInclusive 1 ;
+        sh:maxInclusive 5 ;
+        sh:message "star ratingValue must be a number in [1,5]" ;
+    ] .
+
+# --- Scalar rating: continuous 0..1 -----------------------------------------
+
+freedback:ScalarRatingShape
+    a sh:NodeShape ;
+    sh:targetClass freedback:ScalarRating ;
+    sh:property [
+        sh:path schema:ratingValue ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:double ;
+        sh:minInclusive 0 ;
+        sh:maxInclusive 1 ;
+        sh:message "scalar ratingValue must be a number in [0,1]" ;
+    ] .
+
+# --- Thumb rating: exactly 0 or 1 -------------------------------------------
+
+freedback:ThumbRatingShape
+    a sh:NodeShape ;
+    sh:targetClass freedback:ThumbRating ;
+    sh:property [
+        sh:path schema:ratingValue ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:double ;
+        sh:in ( 0.0 1.0 ) ;
+        sh:message "thumb ratingValue must be 0.0 (down) or 1.0 (up)" ;
+    ] .
+
+# --- Textual body (comment / tag): non-empty string -------------------------
+
+freedback:TextualBodyShape
+    a sh:NodeShape ;
+    sh:targetClass oa:TextualBody ;
+    sh:property [
+        sh:path rdf:value ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:minLength 1 ;
+        sh:message "a textual body must carry a non-empty rdf:value string" ;
+    ] .
