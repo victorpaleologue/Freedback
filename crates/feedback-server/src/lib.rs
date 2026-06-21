@@ -89,9 +89,11 @@ pub fn build_app(state: AppState) -> Router {
             "/annotations/",
             post(handlers::post_annotations).get(handlers::get_collection),
         )
+        .route("/annotations/by-id", post(handlers::post_by_id))
         .route("/annotations/{id}", get(handlers::get_one))
         .route("/submit/{jwt}", put(handlers::submit))
         .route("/sync", get(handlers::get_sync))
+        .route("/negentropy", post(handlers::post_negentropy))
         .route("/.well-known/freedback", get(handlers::well_known))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
