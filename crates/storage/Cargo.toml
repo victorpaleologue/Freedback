@@ -1,0 +1,29 @@
+[package]
+name = "freedback-storage"
+description = "FeedbackStore trait + storage backends (in-memory, Oxigraph) for Freedback."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "freedback_storage"
+
+[features]
+default = ["oxigraph"]
+# Oxigraph primary backend (in-memory; RocksDB disabled for portability).
+oxigraph = ["dep:oxigraph"]
+
+[dependencies]
+freedback-protocol = { path = "../protocol-lib" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+oxigraph = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

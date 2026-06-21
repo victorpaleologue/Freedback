@@ -1,0 +1,172 @@
+//! Oxigraph-backed [`FeedbackStore`] — the primary production store.
+//!
+//! Annotations are persisted as RDF: each is a subject
+//! `urn:freedback:ann:<dedup>` carrying its raw JSON-LD as a literal under
+//! `freedback:raw`. This keeps the door open for the collection server's SPARQL
+//! index/equivalence work (M6) while remaining a faithful annotation store now.
+//! The in-memory backend is used here (`Store::new`); the RocksDB backend stays
+//! native/durable and is enabled at deployment time.
+
+use async_trait::async_trait;
+use freedback_protocol::Annotation;
+use oxigraph::model::{GraphName, Literal, NamedNode, NamedOrBlankNodeRef, Quad, Term};
+use oxigraph::store::Store;
+
+use crate::{
+    latest_edits, order_records, FeedbackStore, Page, PutOutcome, Query, Record, Result, StoreError,
+};
+
+const RAW_PRED: &str = "https://freedback.org/ns#raw";
+
+/// An Oxigraph-backed store (in-memory backend).
+pub struct OxigraphStore {
+    store: Store,
+}
+
+impl OxigraphStore {
+    /// Create a new in-memory Oxigraph store.
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            store: Store::new().map_err(be)?,
+        })
+    }
+
+    fn subject(dedup_id: &str) -> Result<NamedNode> {
+        NamedNode::new(format!("urn:freedback:ann:{dedup_id}")).map_err(be)
+    }
+
+    fn raw_pred() -> NamedNode {
+        NamedNode::new_unchecked(RAW_PRED)
+    }
+
+    /// Rebuild every record by deserializing the stored raw JSON-LD.
+    fn all_records(&self) -> Result<Vec<Record>> {
+        let pred = Self::raw_pred();
+        let mut recs = Vec::new();
+        for q in self
+            .store
+            .quads_for_pattern(None, Some(pred.as_ref()), None, None)
+        {
+            let q = q.map_err(be)?;
+            if let Term::Literal(l) = q.object {
+                let ann: Annotation = serde_json::from_str(l.value())?;
+                recs.push(Record::from_annotation(&ann)?);
+            }
+        }
+        Ok(recs)
+    }
+}
+
+#[async_trait]
+impl FeedbackStore for OxigraphStore {
+    async fn put(&self, ann: &Annotation) -> Result<PutOutcome> {
+        let record = Record::from_annotation(ann)?;
+        let subj = Self::subject(&record.dedup_id)?;
+        let pred = Self::raw_pred();
+        let exists = self
+            .store
+            .quads_for_pattern(
+                Some(NamedOrBlankNodeRef::NamedNode(subj.as_ref())),
+                Some(pred.as_ref()),
+                None,
+                None,
+            )
+            .next()
+            .is_some();
+        if !exists {
+            let json = serde_json::to_string(ann)?;
+            let quad = Quad::new(
+                subj,
+                pred,
+                Literal::new_simple_literal(json),
+                GraphName::DefaultGraph,
+            );
+            self.store.insert(&quad).map_err(be)?;
+        }
+        Ok(PutOutcome {
+            dedup_id: record.dedup_id,
+            created: !exists,
+        })
+    }
+
+    async fn get(&self, dedup_id: &str) -> Result<Option<Annotation>> {
+        let subj = Self::subject(dedup_id)?;
+        let pred = Self::raw_pred();
+        if let Some(q) = self
+            .store
+            .quads_for_pattern(
+                Some(NamedOrBlankNodeRef::NamedNode(subj.as_ref())),
+                Some(pred.as_ref()),
+                None,
+                None,
+            )
+            .next()
+        {
+            let q = q.map_err(be)?;
+            if let Term::Literal(l) = q.object {
+                return Ok(Some(serde_json::from_str(l.value())?));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn query(&self, q: &Query) -> Result<Page> {
+        let mut records: Vec<Record> = self
+            .all_records()?
+            .into_iter()
+            .filter(|r| q.target.as_ref().is_none_or(|t| &r.target == t))
+            .collect();
+        order_records(&mut records);
+        let total = records.len();
+        let items = if q.page_size == 0 {
+            records.into_iter().map(|r| r.ann).collect()
+        } else {
+            records
+                .into_iter()
+                .skip(q.page * q.page_size)
+                .take(q.page_size)
+                .map(|r| r.ann)
+                .collect()
+        };
+        Ok(Page {
+            items,
+            total,
+            page: q.page,
+            page_size: q.page_size,
+        })
+    }
+
+    async fn sync(
+        &self,
+        target: &str,
+        gt_iat: i64,
+        latest_edits_only: bool,
+    ) -> Result<Vec<Annotation>> {
+        let mut records: Vec<Record> = self
+            .all_records()?
+            .into_iter()
+            .filter(|r| r.target == target && r.iat > gt_iat)
+            .collect();
+        if latest_edits_only {
+            records = latest_edits(records);
+        } else {
+            order_records(&mut records);
+        }
+        Ok(records.into_iter().map(|r| r.ann).collect())
+    }
+}
+
+fn be<E: std::fmt::Display>(e: E) -> StoreError {
+    StoreError::Backend(e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::conformance;
+
+    #[tokio::test]
+    async fn oxigraph_store_conformance() {
+        conformance::run(&OxigraphStore::new().unwrap()).await;
+    }
+}
