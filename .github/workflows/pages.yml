@@ -1,0 +1,46 @@
+name: Pages
+
+# Publishes the static protocol artifacts (the @context, ontology, and SHACL
+# shapes) so the pinned IRIs resolve. Pages is static-only — it never runs any
+# of the servers (see docs/adr / roadmap M10).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ontology/**"
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the static site
+        run: |
+          mkdir -p _site/ns
+          cp ontology/context.jsonld _site/ns/context.jsonld
+          cp ontology/freedback.ttl  _site/ns/freedback.ttl
+          cp ontology/shapes.ttl     _site/ns/shapes.ttl
+          cp site/index.html         _site/index.html
+          # Custom domain (freedback.org) is pending registrar confirmation —
+          # see docs/naming.md. Add a CNAME file here once the domain is owned.
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

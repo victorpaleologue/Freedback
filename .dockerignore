@@ -1,0 +1,10 @@
+target
+**/target
+.git
+.github
+docs
+widgets
+firefox-extension
+demo-third-party
+*.md
+!ontology/**

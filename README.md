@@ -24,12 +24,22 @@ green on **native + wasm32**:
 - ✅ Feedback server (axum): WAP container, paging, `/sync`, dual auth, well-known
 - ✅ Basic client (native + wasm32): read / write / sync over endpoints & files
 - ✅ Discovery server (registry): announce-with-verify + resolve (federation)
-- ⏳ Collection server, equivalence agent, widgets, extension —
-  see [`docs/roadmap.md`](docs/roadmap.md)
+- ✅ Collection server: index, URI equivalence, polite caching, rate limiting
+- ✅ Advanced client: local redb sync copy with resume cursor + dedup-on-merge
+- ✅ Equivalence-detection prompt (`agent-prompts/equivalence.md`)
+- ✅ Deployment: `docker compose up` for the full stack; Pages serves the ontology
+- ⏳ Web widgets, Firefox extension, interop demo — see [`docs/roadmap.md`](docs/roadmap.md)
+
+7 of 10 milestones; the whole Rust backbone is done and tested (43 tests).
+**Naming note:** an unrelated dormant npm `freedback` exists and holds
+`freedback.dev` — see [`docs/naming.md`](docs/naming.md).
 
 ## Quick start
 
 ```bash
+# Whole stack in one command (ephemeral in-memory storage):
+docker compose up --build      # feedback :8080 · discovery :8090 · collection :8100
+
 # Native: build, lint, test the whole workspace
 cargo test --workspace
 

@@ -123,13 +123,17 @@ path it targets (`POST /equivalence {a,b,proof}`) already exists (M6).
   confidence, and prefers strong identifiers — ✅ (shipped verbatim). A scheduled
   LLM *client/job* is intentionally out of scope.
 
-### M10 — deployment + Pages + release [#cross-cutting]
-musl/RocksDB build matrix (cargo-zigbuild); container image; GitHub Pages for
-static artifacts (`@context`, ontology, shapes, widget/wasm demos) at stable
-URLs; release pipeline (binaries + wasm pkg).
+### M10 — deployment + Pages ✅ (core) [#cross-cutting]
+Multi-stage `Dockerfile` (in-memory Oxigraph → ephemeral demo image, no Clang),
+`docker compose up` for the full 3-server stack, a `container.yml` CI job that
+builds the image, and a `pages.yml` workflow serving the `@context`/ontology/
+shapes at stable `/ns/*` URLs (+ landing page). See `docs/deployment.md`.
 - **Depends on:** M3 (a server to ship)
-- **Acceptance:** `docker run … freedback/server` boots; ontology served at
-  stable URLs; CI publishes artifacts on tags.
+- **Acceptance:** `docker compose up` boots all three servers; ontology served at
+  stable URLs by Pages; container build validated in CI. ✅ (core). **Deferred:**
+  musl static build via cargo-zigbuild, durable RocksDB backend, tagged release
+  pipeline (binaries + wasm pkg), and the `freedback.org` custom domain (pending
+  registrar — see `docs/naming.md`).
 
 ## Cross-cutting issues
 - **CI** ✅ — fmt, clippy, native test, wasm32 build, ontology parse checks.
