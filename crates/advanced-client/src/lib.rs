@@ -5,12 +5,19 @@
 //! every annotation seen, with a per-`(server, target)` resume cursor (the max
 //! `iat`). [`AdvancedClient::sync`] pulls only `iat > cursor` from a server's
 //! `/sync` endpoint and merges: identical ids drop, and a newer edit supersedes
-//! its predecessor for the same `(issuer, target)`. [`AdvancedClient::reconcile_full`]
-//! does a from-scratch pull to catch backdated items (a simple stand-in for the
-//! negentropy set reconciliation noted in the roadmap).
+//! its predecessor for the same `(issuer, target)`.
+//!
+//! Backdated items (an `iat` below the cursor) are invisible to the cursor pull.
+//! [`AdvancedClient::reconcile`] catches them efficiently via NIP-77 range-based
+//! set reconciliation (negentropy, in [`freedback_protocol::negentropy`]): the
+//! client and server exchange range fingerprints over the per-`(server, target)`
+//! dedup-id set, recurse only into mismatching ranges, and the client fetches
+//! ONLY the differing ids — O(diff), not O(all).
+//! [`AdvancedClient::reconcile_full`] is kept as the labeled fallback (a
+//! from-scratch pull) for peers that do not advertise `/negentropy`.
 
 use freedback_cli_client::{Client, CollectionPoint, ReqwestTransport, Transport};
-use freedback_protocol::{dedup_id, Annotation};
+use freedback_protocol::{dedup_id, Annotation, Item};
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -196,6 +203,20 @@ impl LocalStore {
         Ok(out)
     }
 
+    /// The negentropy item set (`(iat, dedup_id)`) for a target — the **full**
+    /// id set held locally (live AND superseded), so reconciliation diffs every
+    /// content-addressed id one-for-one against the server's full set. Sorted
+    /// into the canonical `(timestamp, id)` order both peers agree on.
+    pub fn negentropy_items(&self, target: &str) -> Result<Vec<Item>> {
+        let items = self
+            .records()?
+            .into_iter()
+            .filter(|r| r.target == target)
+            .map(|r| Item::new(r.iat, r.dedup_id))
+            .collect();
+        Ok(freedback_protocol::negentropy::sorted(items))
+    }
+
     /// The resume cursor (max `iat` seen) for a `(server, target)`.
     pub fn cursor(&self, server: &str, target: &str) -> Result<i64> {
         let r = self.db.begin_read().map_err(db_err)?;
@@ -232,6 +253,32 @@ pub struct SyncReport {
     /// How many were newly added locally.
     pub new: usize,
     /// The resume cursor after the sync.
+    pub cursor: i64,
+}
+
+/// Which path reconciled a backdated set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReconcileVia {
+    /// NIP-77 range-based reconciliation: only the differing ids transferred.
+    Negentropy,
+    /// The full-pull fallback (peer did not support `POST /negentropy`).
+    FullPull,
+}
+
+/// Report from a backdated reconciliation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReconcileReport {
+    /// Which path was taken.
+    pub via: ReconcileVia,
+    /// Number of annotations actually transferred from the server (the O(diff)
+    /// figure: for negentropy this is exactly the `need` set the client lacked,
+    /// NOT the whole target set).
+    pub transferred: usize,
+    /// How many were newly added locally.
+    pub new: usize,
+    /// Number of negentropy rounds (0 for the full-pull fallback).
+    pub rounds: usize,
+    /// The resume cursor after merging.
     pub cursor: i64,
 }
 
@@ -273,8 +320,104 @@ impl<T: Transport> AdvancedClient<T> {
         self.pull(server, target, cursor, true).await
     }
 
-    /// Full reconciliation: pulls from `iat = 0` (catches backdated items a
-    /// plain cursor pull would miss). The efficient future path is negentropy.
+    /// Backdated reconciliation, efficiently: run NIP-77 range-based set
+    /// reconciliation against the server's `/negentropy` endpoint, transfer only
+    /// the differing ids, and fall back to a full pull if the peer does not
+    /// support negentropy.
+    ///
+    /// This is the replacement for the full-pull stand-in on the reconcile path
+    /// (issue #26): a second reconciliation after a handful of backdated inserts
+    /// transfers O(diff), not O(all).
+    pub async fn reconcile(&self, server_base: &str, target: &str) -> Result<ReconcileReport> {
+        let server = server_base.trim_end_matches('/');
+        match self.reconcile_negentropy(server, target).await {
+            Ok(report) => Ok(report),
+            // The server lacks (or rejected) the negentropy endpoint — degrade
+            // to the labeled full-pull fallback so reconciliation still works
+            // against a peer that only speaks the cursor protocol.
+            Err(AdvancedError::Client(_)) => {
+                let full = self.pull(server, target, 0, false).await?;
+                Ok(ReconcileReport {
+                    via: ReconcileVia::FullPull,
+                    transferred: full.fetched,
+                    new: full.new,
+                    rounds: 0,
+                    cursor: full.cursor,
+                })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// NIP-77 reconciliation core: drive range fingerprint rounds to a fixpoint,
+    /// collect the ids only the server holds, bulk-fetch exactly those, and
+    /// merge. Returns a [`ReconcileReport`] whose `transferred` is the O(diff)
+    /// count. Surfaces `AdvancedError::Client` (so [`Self::reconcile`] can fall
+    /// back) when the peer has no negentropy endpoint.
+    pub async fn reconcile_negentropy(
+        &self,
+        server_base: &str,
+        target: &str,
+    ) -> Result<ReconcileReport> {
+        let server = server_base.trim_end_matches('/');
+        let point = CollectionPoint::from_server(server);
+        let local = self.store.negentropy_items(target)?;
+
+        // Round 0: the client's opening full-range claim.
+        let mut message = freedback_protocol::negentropy::initiate(&local);
+        let mut need: Vec<String> = Vec::new();
+        let mut rounds = 0;
+        // Bound the loop defensively; convergence is logarithmic in the set size.
+        const MAX_ROUNDS: usize = 64;
+        loop {
+            rounds += 1;
+            let reply = self
+                .client
+                .negentropy_round(&point, target, &message)
+                .await
+                .map_err(|e| AdvancedError::Client(e.to_string()))?;
+            let rec = freedback_protocol::negentropy::reconcile(&local, &reply);
+            need.extend(rec.need);
+            // `have` (ids only we hold) is intentionally ignored: the
+            // advanced-client is a read-only local copy and does not push.
+            if rec.next.is_empty() || rounds >= MAX_ROUNDS {
+                break;
+            }
+            message = rec.next;
+        }
+        need.sort();
+        need.dedup();
+
+        // Fetch ONLY the differing ids — the O(diff) transfer.
+        let fetched = self
+            .client
+            .fetch_by_id(&point, &need)
+            .await
+            .map_err(|e| AdvancedError::Client(e.to_string()))?;
+
+        let mut new = 0;
+        let mut max_iat = self.store.cursor(server, target)?;
+        for ann in &fetched {
+            if self.store.upsert(ann)? {
+                new += 1;
+            }
+            max_iat = max_iat.max(ann.iat().unwrap_or(0));
+        }
+        self.store.set_cursor(server, target, max_iat)?;
+
+        Ok(ReconcileReport {
+            via: ReconcileVia::Negentropy,
+            transferred: fetched.len(),
+            new,
+            rounds,
+            cursor: max_iat,
+        })
+    }
+
+    /// Full reconciliation: pulls every annotation from `iat = 0` (catches
+    /// backdated items a plain cursor pull would miss). Kept as the labeled
+    /// fallback for [`Self::reconcile`] when a peer does not support negentropy;
+    /// prefer [`Self::reconcile`] for the O(diff) path.
     pub async fn reconcile_full(&self, server_base: &str, target: &str) -> Result<SyncReport> {
         let server = server_base.trim_end_matches('/');
         self.pull(server, target, 0, false).await

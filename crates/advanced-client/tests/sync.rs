@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use freedback_advanced_client::{AdvancedClient, LocalStore};
+use freedback_advanced_client::{AdvancedClient, LocalStore, ReconcileVia};
 use freedback_feedback_server::{build_app, AppState};
 use freedback_protocol::{Annotation, Body, Creator, Motivation, Target};
 use freedback_storage::{FeedbackStore, MemoryStore};
@@ -14,6 +14,22 @@ fn ann(issuer: &str, created: &str, stars: f64) -> Annotation {
         Motivation::Assessing,
         Target::Iri(T.into()),
         vec![Body::star(stars)],
+    )
+    .with_creator(Creator::new(issuer))
+    .with_created(created)
+}
+
+/// A distinct annotation at a given unix `iat` (seconds since epoch). Varying
+/// the issuer keeps every dedup id unique even at the same timestamp.
+fn ann_at(issuer: &str, iat: i64) -> Annotation {
+    let created = time::OffsetDateTime::from_unix_timestamp(iat)
+        .unwrap()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    Annotation::new(
+        Motivation::Assessing,
+        Target::Iri(T.into()),
+        vec![Body::star(3.0)],
     )
     .with_creator(Creator::new(issuer))
     .with_created(created)
@@ -122,4 +138,135 @@ async fn backdated_item_reconciled_by_full_pull() {
         .unwrap()
         .iter()
         .any(|r| r.iat == 50));
+}
+
+#[tokio::test]
+async fn negentropy_reconciles_backdated_item() {
+    let store = Arc::new(MemoryStore::new());
+    store
+        .put(&ann("k1", "1970-01-01T00:03:20Z", 4.0))
+        .await
+        .unwrap(); // iat 200
+    let server = spawn_feedback(store.clone()).await;
+
+    let client = AdvancedClient::new(LocalStore::in_memory().unwrap());
+    client.sync(&server, T).await.unwrap();
+
+    // A backdated annotation the cursor can never see.
+    store
+        .put(&ann("k2", "1970-01-01T00:00:50Z", 2.0))
+        .await
+        .unwrap(); // iat 50
+    assert_eq!(client.sync(&server, T).await.unwrap().fetched, 0);
+
+    // Negentropy reconciliation catches it, transferring ONLY the one diff.
+    let r = client.reconcile(&server, T).await.unwrap();
+    assert_eq!(r.via, ReconcileVia::Negentropy);
+    assert_eq!(r.transferred, 1, "only the differing id is transferred");
+    assert_eq!(r.new, 1);
+    assert!(client
+        .store()
+        .records()
+        .unwrap()
+        .iter()
+        .any(|r| r.iat == 50));
+}
+
+#[tokio::test]
+async fn second_reconcile_transfers_o_diff_not_o_all() {
+    // The acceptance test for issue #26: a large already-synced set, then a
+    // handful of backdated inserts; the reconcile must transfer ~the number of
+    // NEW items, far fewer than the total.
+    const BASE: i64 = 500;
+    const BACKDATED: i64 = 5;
+
+    let store = Arc::new(MemoryStore::new());
+    // 500 distinct annotations spread across timestamps 1000..1500.
+    for i in 0..BASE {
+        store
+            .put(&ann_at(&format!("base{i}"), 1000 + i))
+            .await
+            .unwrap();
+    }
+    let server = spawn_feedback(store.clone()).await;
+
+    let client = AdvancedClient::new(LocalStore::in_memory().unwrap());
+    // First reconcile: the client is empty, so it legitimately pulls everything.
+    let first = client.reconcile(&server, T).await.unwrap();
+    assert_eq!(first.via, ReconcileVia::Negentropy);
+    assert_eq!(first.transferred, BASE as usize);
+    assert_eq!(client.store().records().unwrap().len(), BASE as usize);
+
+    // A handful of BACKDATED inserts (low timestamps, below everything synced).
+    for i in 0..BACKDATED {
+        store
+            .put(&ann_at(&format!("back{i}"), 10 + i))
+            .await
+            .unwrap();
+    }
+
+    // Second reconcile: must transfer ONLY the new items — O(diff), not O(all).
+    let second = client.reconcile(&server, T).await.unwrap();
+    assert_eq!(second.via, ReconcileVia::Negentropy);
+    assert_eq!(
+        second.transferred, BACKDATED as usize,
+        "second reconcile transfers only the {BACKDATED} new items, not all {BASE}"
+    );
+    assert_eq!(second.new, BACKDATED as usize);
+    // The transfer is far smaller than the full set: prove the O(diff) win.
+    assert!(
+        second.transferred * 10 < BASE as usize,
+        "transferred {} must be << total {}",
+        second.transferred,
+        BASE
+    );
+    // Convergence stays shallow (logarithmic), not one round per item.
+    assert!(
+        second.rounds < 10,
+        "took {} rounds, expected logarithmic",
+        second.rounds
+    );
+    assert_eq!(
+        client.store().records().unwrap().len(),
+        (BASE + BACKDATED) as usize
+    );
+
+    // A third reconcile with nothing new transfers zero.
+    let third = client.reconcile(&server, T).await.unwrap();
+    assert_eq!(third.transferred, 0, "no diff → no transfer");
+    assert_eq!(third.new, 0);
+}
+
+#[tokio::test]
+async fn reconcile_falls_back_to_full_pull_without_negentropy() {
+    // A server with no /negentropy route (a bare router with just /sync and the
+    // collection read) must still reconcile, via the labeled full-pull fallback.
+    use axum::routing::get;
+    use axum::Router;
+
+    let store = Arc::new(MemoryStore::new());
+    store
+        .put(&ann("k1", "1970-01-01T00:03:20Z", 4.0))
+        .await
+        .unwrap();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let state = AppState::new(store.clone(), base.clone());
+    // Mount ONLY the cursor + collection routes — no /negentropy, no /by-id.
+    let app = Router::new()
+        .route(
+            "/annotations/",
+            get(freedback_feedback_server::handlers::get_collection),
+        )
+        .route("/sync", get(freedback_feedback_server::handlers::get_sync))
+        .with_state(state);
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = AdvancedClient::new(LocalStore::in_memory().unwrap());
+    let r = client.reconcile(&base, T).await.unwrap();
+    assert_eq!(r.via, ReconcileVia::FullPull, "degrades to full pull");
+    assert!(r.new >= 1, "fallback still reconciles");
 }
