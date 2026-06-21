@@ -6,6 +6,7 @@ members = [
     "crates/feedback-server",
     "crates/cli-client",
     "crates/discovery-server",
+    "crates/collection-server",
 ]
 
 [workspace.package]

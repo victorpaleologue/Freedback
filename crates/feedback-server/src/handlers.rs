@@ -91,10 +91,15 @@ pub async fn post_annotations(
 }
 
 /// `GET /annotations/?target=&page=&page_size=` — paginated collection read.
+///
+/// Honors `If-None-Match` (conditional GET): when the caller's ETag matches the
+/// freshly computed page ETag, returns `304 Not Modified` with no body, so a
+/// polite aggregator (the collection server) costs one cheap 304.
 pub async fn get_collection(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(p): Query<CollectionParams>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<axum::response::Response, ApiError> {
     let page = p.page.unwrap_or(0);
     let page_size = p.page_size.unwrap_or(state.page_size);
     let result = state
@@ -114,7 +119,23 @@ pub async fn get_collection(
         result.total,
         &result.items,
     );
-    Ok((view.headers, Json(view.body)))
+
+    // Conditional GET: 304 when the client's ETag matches.
+    if let (Some(inm), Some(etag)) = (
+        headers.get(axum::http::header::IF_NONE_MATCH),
+        view.headers.get(axum::http::header::ETAG),
+    ) {
+        if inm == etag {
+            let mut not_modified = axum::response::Response::new(axum::body::Body::empty());
+            *not_modified.status_mut() = StatusCode::NOT_MODIFIED;
+            not_modified
+                .headers_mut()
+                .insert(axum::http::header::ETAG, etag.clone());
+            return Ok(not_modified);
+        }
+    }
+
+    Ok((view.headers, Json(view.body)).into_response())
 }
 
 /// `GET /annotations/{id}` — single annotation by dedup id.

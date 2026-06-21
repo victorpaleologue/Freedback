@@ -79,13 +79,18 @@ is a later refinement).
   (2 cluster tests on real ephemeral ports). Remaining: NIP-65 resolver, server
   liveness/expiry, signed announces.
 
-### M6 — collection-server (aggregation) [#component-7]
+### M6 — collection-server (aggregation) ✅ [#component-7]
 Multi-server cache with conditional requests (ETag/If-None-Match) + per-host
-rate limiting; per-URI index; URI equivalence table (transitively closed via
-SPARQL property paths); `POST /equivalence`.
+token-bucket rate limiting; per-URI index; URI equivalence (transitive, via a
+union-find — see note); `POST /equivalence`.
 - **Depends on:** M5
-- **Acceptance:** repeated queries hit cache (observable 304s upstream);
-  equivalent URIs return a unified set; cross-server dedup by SHA-256 id.
+- **Acceptance:** repeated queries revalidate with observable upstream 304s;
+  equivalent URIs return a unified set; cross-server dedup by SHA-256 id; per-host
+  budget caps upstream bursts. ✅ (6 unit + 4 cluster tests). Conditional GET was
+  added to the feedback server. **Note:** equivalence uses a union-find rather
+  than Oxigraph SPARQL property paths (same transitive closure, no dependency,
+  trivially testable; SPARQL remains an option behind the same API). Remaining:
+  `Cache-Control`/`Last-Modified` honoring, persistent index.
 
 ### M7 — advanced-client (local sync copy) [#component-6]
 Local redb store keyed by dedup id; resume cursor per (server, target);
