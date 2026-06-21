@@ -192,6 +192,47 @@ async fn oauth_path_stamps_creator() {
 }
 
 #[tokio::test]
+async fn accepts_varied_jsonld_serialization() {
+    // JSON-LD is primary: a conformant-but-differently-serialized annotation
+    // (single body object, target as an object, prefixed property names,
+    // @context as a string, "oa:" motivation) must be accepted and normalized.
+    let app = app_with_oauth("tok", "app", "u");
+    let variant = serde_json::json!({
+        "@context": "http://www.w3.org/ns/anno.jsonld",
+        "type": "Annotation",
+        "motivation": "oa:assessing",
+        "created": "2026-06-21T10:00:00Z",
+        "target": { "id": "https://example.com/item/9" },
+        "body": {
+            "type": ["freedback:StarRating", "schema:Rating"],
+            "schema:ratingValue": 5,
+            "schema:worstRating": 1,
+            "schema:bestRating": 5
+        }
+    });
+    let (status, _h, body) = send(&app, "POST", "/annotations/", Some("tok"), Some(variant)).await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "varied serialization must be accepted"
+    );
+    // It was normalized to the canonical model (array body, stamped creator).
+    assert!(body["body"].is_array());
+    assert_eq!(body["body"][0]["schema:ratingValue"], 5.0);
+
+    // And it is queryable under its target.
+    let (_s, _h, page) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/9",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(page["partOf"]["total"], 1);
+}
+
+#[tokio::test]
 async fn repost_is_idempotent() {
     let app = app();
     let (_id, ann) = signed_star(5.0);

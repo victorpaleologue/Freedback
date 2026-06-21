@@ -148,8 +148,10 @@ shapes at stable `/ns/*` URLs (+ landing page). See `docs/deployment.md`.
 - **CI** ✅ — fmt, clippy, native test, wasm32 build, ontology parse checks.
 - **Test harness** — `TestCluster` (in-process axum apps on ephemeral ports);
   deterministic fixed keypairs + timestamps. (Lands with M5.)
-- **JSON-LD interop** — expand/compact of *external* annotations via the
-  `json-ld` crate with a local-context loader. (Supports M8 interop.)
+- **JSON-LD ingest** ✅ — **primary**, not interop: `protocol-lib::jsonld`
+  normalizes any conformant serialization on every POST, making dedup ids and
+  signatures serialization-independent (ADR 0007). Remaining (#12): full
+  expansion of *arbitrary third-party `@context`s* via the `json-ld` crate.
 - **Custom rating scales** — a SHACL profile validating `ratingValue` against a
   body's own `worstRating`/`bestRating` (needs SPARQL-based constraints; the
   default profile uses fixed scales). See ADR 0004.

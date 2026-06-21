@@ -16,14 +16,18 @@
 //!   `docs/adr/0004`). The model, canonicalization, dedup id, and P-256 signing
 //!   all remain available in the browser.
 //!
-//! The model → RDF mapping in [`rdf`] is pure Rust and always available; full
-//! JSON-LD interop (expanding/compacting *external* annotations) is a later
-//! milestone.
+//! JSON-LD ingest is **primary**: [`jsonld::from_jsonld`] normalizes any
+//! conformant W3C Web Annotation serialization into the canonical model before
+//! the dedup id / signature are computed (ADR 0007), and the model → RDF mapping
+//! in [`rdf`] feeds SHACL. Both are pure Rust (native + `wasm32`). Full
+//! expansion of arbitrary third-party `@context`s via the `json-ld` crate is the
+//! documented extension.
 
 pub mod canonical;
 pub mod context;
 pub mod error;
 pub mod identity;
+pub mod jsonld;
 pub mod model;
 pub mod rdf;
 
@@ -33,6 +37,7 @@ pub mod validation;
 pub use canonical::{canonical_bytes, dedup_id};
 pub use error::{Error, Result};
 pub use identity::{verify_annotation, Identity};
+pub use jsonld::from_jsonld;
 pub use model::{Annotation, Body, Creator, Motivation, Selector, Signature, Target};
 
 #[cfg(feature = "validation")]
