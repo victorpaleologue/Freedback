@@ -79,6 +79,10 @@ pub struct AppState {
     upstream_calls: Arc<AtomicU64>,
     upstream_304: Arc<AtomicU64>,
     cache_hits: Arc<AtomicU64>,
+    /// Wrap the router in a permissive CORS layer so a cross-origin browser
+    /// widget can read `/index`. Off by default; set by the binary via
+    /// `FREEDBACK_CORS_PERMISSIVE` and by the widgets E2E harness.
+    cors_permissive: bool,
     /// Durable backing for `servers` / `cache` / `eq`, write-through on mutation.
     /// `None` ⇒ the original ephemeral, in-memory-only behavior.
     persist: Option<Arc<PersistStore>>,
@@ -103,8 +107,15 @@ impl AppState {
             upstream_calls: Arc::new(AtomicU64::new(0)),
             upstream_304: Arc::new(AtomicU64::new(0)),
             cache_hits: Arc::new(AtomicU64::new(0)),
+            cors_permissive: false,
             persist: None,
         }
+    }
+
+    /// Enable a permissive CORS layer (cross-origin browser widgets).
+    pub fn with_cors_permissive(mut self, on: bool) -> Self {
+        self.cors_permissive = on;
+        self
     }
 
     /// Build state durably backed by a [`redb`] database at `path`, reloading any
@@ -187,14 +198,28 @@ impl AppState {
 
 /// Build the collection-server router.
 pub fn build_app(state: AppState) -> Router {
-    Router::new()
+    let cors_permissive = state.cors_permissive;
+    let router = Router::new()
         .route("/servers", post(register_server).get(list_servers))
         .route("/index", get(index))
         .route("/equivalence", post(post_equivalence).get(get_equivalence))
         .route("/debug/metrics", get(metrics))
         .route("/.well-known/freedback", get(well_known))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .layer(TraceLayer::new_for_http());
+
+    let router = if cors_permissive {
+        use axum::http::{header, Method};
+        router.layer(
+            tower_http::cors::CorsLayer::new()
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+                .allow_headers([header::CONTENT_TYPE, header::ACCEPT]),
+        )
+    } else {
+        router
+    };
+
+    router.with_state(state)
 }
 
 fn normalize(url: &str) -> String {

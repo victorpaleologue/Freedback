@@ -66,11 +66,55 @@ jobs:
         run: |
           node --check widgets/freedback-widgets.js
           node --check widgets/test.cjs
+          node --check widgets/e2e/serve.cjs
+          node --check widgets/e2e/run-e2e.cjs
+          node --check widgets/e2e/widgets.spec.cjs
+          node --check widgets/e2e/playwright.config.cjs
           node --check firefox-extension/popup.js
       - name: Validate extension manifest is JSON
         run: node -e "JSON.parse(require('fs').readFileSync('firefox-extension/manifest.json','utf8'))"
       - name: Widget helper unit tests
         run: node widgets/test.cjs
+
+  # Widgets E2E: render the custom elements in a real browser (Chromium) against
+  # an in-process feedback + collection stack and drive publish + read-back for
+  # every widget kind over both the self-signed (data-sign / WebCrypto) and the
+  # OAuth bearer (data-token) paths. See widgets/e2e/. The stack uses the
+  # in-memory store (oxigraph default feature, RocksDB off) so no Clang is needed.
+  widgets-e2e:
+    name: widgets (e2e · headless browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build server binaries (in-memory store; no Clang/RocksDB)
+        run: cargo build -p freedback-feedback-server -p freedback-collection-server
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Playwright (pinned via lockfile)
+        working-directory: widgets
+        run: npm ci
+      - name: Install Chromium only (with OS deps)
+        working-directory: widgets
+        run: npx playwright install --with-deps chromium
+      - name: Run widgets E2E against the in-process stack
+        working-directory: widgets
+        run: node e2e/run-e2e.cjs
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            widgets/playwright-report
+            widgets/test-results
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Ontology: the served RDF/JSON-LD artifacts must parse.
   ontology:
