@@ -24,11 +24,11 @@ carries its resolving commit.
 | Milestone | Issue | Resolving commit | Status |
 |---|---|---|---|
 | M1 protocol-lib core | #2 | `ac38bbe` | closed ✅ |
-| M2 storage | #3 | `a5f30d9` | closed ✅ (SQLite mock deferred) |
+| M2 storage | #3 | `a5f30d9` | closed ✅ (SQLite mock added in #23, ADR 0016) |
 | M3 feedback-server | #4 | `099c978` | closed ✅ |
 | M4 cli-client | #5 | `98000ef` | closed ✅ |
-| M5 discovery-server | #6 | `347073b` | closed ✅ (NIP-65 outbox resolver added, ADR 0014) |
-| M6 collection-server | #7 | `dd997ad` | closed ✅ (cache freshness + validators added, ADR 0012) |
+| M5 discovery-server | #6 | `347073b` | closed ✅ (NIP-65 outbox resolver, ADR 0014; liveness/signed-announce/gossip hardening in #25, ADR 0015) |
+| M6 collection-server | #7 | `dd997ad` | closed ✅ (cache freshness + validators, ADR 0012; persistent state in #23, ADR 0016) |
 | M7 advanced-client | #8 | `1a70947` | closed ✅ (negentropy deferred) |
 | M9 equivalence prompt | #10 | `feeebbd` | closed ✅ (prompt-only by scope) |
 | M8 widgets/extension/demo | #9 | `bba88dc` | closed ✅ (WebCrypto signing + scalar/tag added, ADR 0013) |
@@ -48,13 +48,15 @@ shapes-driven SHACL validation. Compiles native **and** wasm32.
 - **Acceptance:** dual-target build green; signing tamper-rejected; dedup id
   stable & content-sensitive; SHACL rejects out-of-bounds bodies. ✅
 
-### M2 — storage trait + mocks ✅ (memory + Oxigraph; SQLite pending)
+### M2 — storage trait + mocks ✅ (memory + Oxigraph + SQLite)
 `FeedbackStore` trait; in-memory mock (fast tests); Oxigraph impl (primary,
-in-memory backend); optional SQLite. Put/query/dedup/sync semantics.
+in-memory backend); SQLite durable mock (`sqlite` feature, #23). Put/query/dedup/
+sync semantics.
 - **Depends on:** M1
 - **Acceptance:** put is idempotent by dedup id; `query` pages; `sync(gt_iat)`
   returns strictly newer; `latest_edits_only` collapses per (issuer, target). ✅
-  (shared `conformance::run` suite; both backends green. SQLite mock deferred.)
+  (shared `conformance::run` suite; all three backends green. SQLite mock added
+  in #23, ADR 0016.)
 
 ### M3 — feedback-server (axum) ✅ [#component-1]
 POST-to-container (WAP), paginated reads (`AnnotationPage` + `Link` rels),
@@ -89,8 +91,12 @@ outbox resolver.
   (2 cluster tests on real ephemeral ports). **NIP-65 outbox resolver** shipped
   (ADR 0014): issuers `POST /relays` a self-signed, replaceable relay list
   (verified signature + issuer/key binding), and `GET /resolve?issuer=` returns
-  where that key publishes with no fan-out (3 unit + 1 cluster test). Remaining:
-  server liveness/expiry, signed announces, cross-registry relay-list gossip.
+  where that key publishes with no fan-out (3 unit + 1 cluster test).
+  **Hardening** shipped (#25, ADR 0015): periodic liveness/expiry sweep (stale
+  servers drop from `/servers` past a TTL grace window, injectable clock),
+  optional **signed announces** (detached ES256 over the URL, verified against
+  the server's published key to prove key control), and **cross-registry
+  relay-list gossip** (signed lists replicate and re-verify across registries).
 
 ### M6 — collection-server (aggregation) ✅ [#component-7]
 Multi-server cache with conditional requests (ETag/If-None-Match) + per-host
@@ -105,7 +111,8 @@ union-find — see note); `POST /equivalence`.
   trivially testable; SPARQL remains an option behind the same API).
   `Cache-Control: max-age` freshness (reuse a fresh page with **no** upstream
   request) and the `Last-Modified`/`If-Modified-Since` validator are now honored
-  end-to-end (ADR 0012). Remaining: persistent index/cache across restarts.
+  end-to-end (ADR 0012). Persistent servers/index/equivalence across restarts
+  (opt-in redb backing, `FREEDBACK_STATE_PATH`) added in #23, ADR 0016.
 
 ### M7 — advanced-client (local sync copy) ✅ [#component-6]
 Local redb store keyed by dedup id; resume cursor per (server, target);

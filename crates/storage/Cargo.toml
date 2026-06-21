@@ -1,6 +1,6 @@
 [package]
 name = "freedback-storage"
-description = "FeedbackStore trait + storage backends (in-memory, Oxigraph) for Freedback."
+description = "FeedbackStore trait + storage backends (in-memory, Oxigraph, SQLite) for Freedback."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,6 +15,8 @@ name = "freedback_storage"
 default = ["oxigraph"]
 # Oxigraph primary backend (in-memory; RocksDB disabled for portability).
 oxigraph = ["dep:oxigraph"]
+# SQLite-backed durable mock (rusqlite, bundled C dep — NATIVE ONLY, never wasm).
+sqlite = ["dep:rusqlite"]
 
 [dependencies]
 freedback-protocol = { path = "../protocol-lib" }
@@ -24,6 +26,7 @@ async-trait = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 oxigraph = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
