@@ -1,0 +1,30 @@
+{
+  "@context": [
+    "http://www.w3.org/ns/anno.jsonld",
+    "https://freedback.org/ns/context.jsonld"
+  ],
+  "type": "Annotation",
+  "motivation": "assessing",
+  "creator": {
+    "id": "urn:freedback:key:fd52516ec12d18a9b88799e737e0795058421641b6fecaebc135d6e74dda1d5d"
+  },
+  "created": "2026-06-21T10:00:00Z",
+  "target": "https://example.com/item/widget",
+  "body": [
+    {
+      "type": [
+        "freedback:ScalarRating",
+        "schema:Rating"
+      ],
+      "schema:ratingValue": 0.7,
+      "schema:worstRating": 0,
+      "schema:bestRating": 1
+    }
+  ],
+  "conformsTo": "https://freedback.org/profile/1",
+  "signature": {
+    "alg": "ES256",
+    "kid": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2Dy9B+HKa9L/I9b8+JbjO91LeiZU\nvtgzykDzSDEnZj70VdFKKgX3vy0qcAaPRP99vH2EhGP6ClEZoF3nvKnHww==\n-----END PUBLIC KEY-----\n",
+    "sig": "WBS1yTGgUgAGnXzfqloLnh01AMvJ7e1CQHrjpVDz-6pOX2u6xfaJiOUUkt5jSVhmVzJiqygFQ1j-wg35HjJkUw"
+  }
+}

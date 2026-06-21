@@ -340,6 +340,40 @@ async fn repost_is_idempotent() {
 }
 
 #[tokio::test]
+async fn accepts_browser_signed_annotation_end_to_end() {
+    // The same fixture the widget produces (WebCrypto ES256 over the JCS bytes,
+    // ADR 0013): no bearer token — the self-signature is the authorization. This
+    // exercises the full path: from_jsonld → verify_annotation → SHACL → store.
+    let app = app();
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../protocol-lib/tests/fixtures/widget-signed.json"
+    ))
+    .unwrap();
+
+    let (status, headers, body) = send(&app, "POST", "/annotations/", None, Some(fixture)).await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "a browser self-signed annotation must be accepted without a token"
+    );
+    assert!(headers.contains_key("location"));
+    assert!(body["creator"]["id"]
+        .as_str()
+        .unwrap()
+        .starts_with("urn:freedback:key:"));
+
+    let (_s, _h, page) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/widget",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(page["partOf"]["total"], 1);
+}
+
+#[tokio::test]
 async fn collection_emits_freshness_and_validator_headers() {
     let app = app();
     let (_id, ann) = signed_star(4.0);
