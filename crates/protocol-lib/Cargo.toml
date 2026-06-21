@@ -20,6 +20,9 @@ default = ["validation"]
 validation = ["dep:oxrdf", "dep:oxttl"]
 # Opt-in marker for browser/wasm builds (enables getrandom/js where needed).
 wasm = ["getrandom/js", "uuid/js"]
+# Full JSON-LD expansion of arbitrary third-party @contexts via the json-ld
+# crate (native only; the alias-based `from_jsonld` covers the pinned vocab).
+jsonld = ["dep:json-ld", "dep:json-syntax", "dep:static-iref", "dep:iref", "dep:futures"]
 
 [dependencies]
 serde = { workspace = true }
@@ -36,6 +39,13 @@ getrandom = { version = "0.2" }
 # Pure-Rust RDF parsing for the shapes-driven validator (native; `validation`).
 oxrdf = { workspace = true, optional = true }
 oxttl = { workspace = true, optional = true }
+
+# Full JSON-LD processor (native; `jsonld` feature).
+json-ld = { version = "0.21", optional = true }
+json-syntax = { version = "0.12", features = ["serde_json"], optional = true }
+static-iref = { version = "3", optional = true }
+iref = { version = "3", optional = true }
+futures = { version = "0.3", optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

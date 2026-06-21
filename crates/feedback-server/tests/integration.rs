@@ -233,6 +233,52 @@ async fn accepts_varied_jsonld_serialization() {
 }
 
 #[tokio::test]
+async fn accepts_foreign_context_via_full_compaction() {
+    // A third party names the same feedback with its OWN terms, bound to the
+    // canonical IRIs by an inline @context the alias normalizer cannot read.
+    // The server falls back to full JSON-LD compaction (ADR 0011) and accepts
+    // it, normalizing to the canonical model.
+    let app = app_with_oauth("tok", "app", "u");
+    let foreign = serde_json::json!({
+        "@context": {
+            "Rating": "http://www.w3.org/ns/oa#Annotation",
+            "about":  { "@id": "http://www.w3.org/ns/oa#hasTarget", "@type": "@id" },
+            "why":    { "@id": "http://www.w3.org/ns/oa#motivatedBy", "@type": "@id" },
+            "on":     { "@id": "http://purl.org/dc/terms/created", "@type": "http://www.w3.org/2001/XMLSchema#dateTime" },
+            "scores": { "@id": "http://www.w3.org/ns/oa#hasBody", "@type": "@id" },
+            "Stars":  "https://freedback.org/ns#StarRating",
+            "stars":  { "@id": "http://schema.org/ratingValue", "@type": "http://www.w3.org/2001/XMLSchema#double" },
+            "low":    { "@id": "http://schema.org/worstRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
+            "high":   { "@id": "http://schema.org/bestRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
+            "assessing": "http://www.w3.org/ns/oa#assessing"
+        },
+        "@type": "Rating",
+        "why": "assessing",
+        "on": "2026-06-21T10:00:00Z",
+        "about": "https://example.com/item/foreign",
+        "scores": { "@type": "Stars", "stars": 4, "low": 1, "high": 5 }
+    });
+    let (status, _h, body) = send(&app, "POST", "/annotations/", Some("tok"), Some(foreign)).await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "a third-party @context must be accepted via full compaction"
+    );
+    assert_eq!(body["body"][0]["schema:ratingValue"], 4.0);
+
+    // Queryable under the normalized target.
+    let (_s, _h, page) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/foreign",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(page["partOf"]["total"], 1);
+}
+
+#[tokio::test]
 async fn submit_jwt_export_profile() {
     use freedback_protocol::to_jwt;
     let app = app();
