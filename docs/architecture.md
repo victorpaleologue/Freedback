@@ -91,6 +91,7 @@ The non-obvious decisions are written up as ADRs in [`docs/adr/`](./adr):
 - [0011 — Full JSON-LD via compaction against the pinned context](./adr/0011-full-jsonld-compaction.md)
 - [0012 — HTTP cache freshness + validators (collection ↔ feedback)](./adr/0012-cache-freshness-and-validators.md)
 - [0013 — WebCrypto P-256 signing in the widgets](./adr/0013-webcrypto-widget-signing.md)
+- [0014 — NIP-65-style relay list (outbox discovery)](./adr/0014-nip65-relay-list-resolver.md)
 
 See [`roadmap.md`](./roadmap.md) for milestones and the issue map, and
 [`attributions.md`](./attributions.md) for harvested-code provenance.

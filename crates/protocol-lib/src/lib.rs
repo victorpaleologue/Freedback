@@ -43,7 +43,7 @@ pub mod jsonld_full;
 #[cfg(feature = "validation")]
 pub mod validation;
 
-pub use canonical::{canonical_bytes, dedup_id};
+pub use canonical::{canonical_bytes, canonical_json, dedup_id};
 pub use error::{Error, Result};
 pub use export::{from_jwt, to_jwt};
 pub use identity::{verify_annotation, Identity};

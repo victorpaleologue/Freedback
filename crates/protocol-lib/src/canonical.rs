@@ -35,6 +35,14 @@ pub fn canonical_bytes(ann: &Annotation) -> Result<Vec<u8>> {
     serde_json_canonicalizer::to_vec(&v).map_err(|e| Error::Canonicalization(e.to_string()))
 }
 
+/// The RFC 8785 (JCS) canonical bytes of an **arbitrary** JSON value.
+///
+/// The generic counterpart to [`canonical_bytes`], for signing other Freedback
+/// records over the same canonicalization (e.g. the discovery relay list).
+pub fn canonical_json(value: &serde_json::Value) -> Result<Vec<u8>> {
+    serde_json_canonicalizer::to_vec(value).map_err(|e| Error::Canonicalization(e.to_string()))
+}
+
 /// Compute the content-addressed dedup id (lowercase hex SHA-256).
 pub fn dedup_id(ann: &Annotation) -> Result<String> {
     let bytes = canonical_bytes(ann)?;

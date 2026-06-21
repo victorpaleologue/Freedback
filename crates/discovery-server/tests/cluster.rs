@@ -135,6 +135,97 @@ async fn announce_verify_and_resolve() {
 }
 
 #[tokio::test]
+async fn relay_list_outbox_publish_resolve_and_reject() {
+    use freedback_discovery_server::relays::RelayList;
+
+    let fb_a = spawn_feedback(TARGET_A).await;
+    let disc = spawn_discovery().await;
+    let http = reqwest::Client::new();
+
+    let id = Identity::generate();
+    let issuer = id.issuer_id().unwrap();
+
+    // The issuer declares it writes to fb_a, and signs the record.
+    let mut list = RelayList::new(
+        issuer.clone(),
+        vec![],
+        vec![fb_a.clone()],
+        "2026-06-21T10:00:00Z",
+    );
+    list.sign(&id).unwrap();
+
+    let resp = http
+        .post(format!("{disc}/relays"))
+        .json(&list)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.json::<Value>().await.unwrap()["stored"], true);
+
+    // Retrievable, and the signature still verifies after the round-trip.
+    let got: RelayList = http
+        .get(format!("{disc}/relays?issuer={issuer}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    got.verify().expect("served relay list must still verify");
+    assert_eq!(got.write, vec![fb_a.clone()]);
+
+    // Outbox resolution: where does this issuer publish? → fb_a, no fan-out.
+    let resolved: Value = http
+        .get(format!("{disc}/resolve?issuer={issuer}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(resolved["servers"].as_array().unwrap(), &vec![json!(fb_a)]);
+
+    // A stale re-publish (older `updated`) is ignored.
+    let mut older = RelayList::new(
+        issuer.clone(),
+        vec![],
+        vec!["http://stale.example".into()],
+        "2026-06-20T00:00:00Z",
+    );
+    older.sign(&id).unwrap();
+    let resp = http
+        .post(format!("{disc}/relays"))
+        .json(&older)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.json::<Value>().await.unwrap()["stored"], false);
+
+    // A tampered list (signature no longer matches) is rejected.
+    let mut tampered = list.clone();
+    tampered.write.push("http://evil.example".into());
+    let resp = http
+        .post(format!("{disc}/relays"))
+        .json(&tampered)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "tampered relay list must be rejected");
+
+    // The stored list is unchanged (still only fb_a).
+    let resolved: Value = http
+        .get(format!("{disc}/resolve?issuer={issuer}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(resolved["servers"].as_array().unwrap(), &vec![json!(fb_a)]);
+}
+
+#[tokio::test]
 async fn discovery_is_itself_conformant() {
     let disc = spawn_discovery().await;
     let http = reqwest::Client::new();
