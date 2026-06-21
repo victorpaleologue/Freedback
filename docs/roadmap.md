@@ -120,9 +120,16 @@ dedup-on-merge with edit supersession; `reconcile_full` for backdated items.
 - **Depends on:** M4, M6
 - **Acceptance:** second sync transfers only `iat > cursor`; no-op when nothing
   new; duplicates from two servers collapse; backdated insert eventually
-  reconciled. ✅ (1 unit + 3 integration tests; `freedback-sync` CLI). **Note:**
-  backdated reconciliation uses a full pull as a stand-in for negentropy
-  (NIP-77) — the efficient range-based protocol remains future work.
+  reconciled. ✅ (1 unit + 6 integration tests; `freedback-sync` CLI).
+  **#26 ✅ — negentropy (NIP-77) range-based sync** now ships (ADR 0017): backdated
+  reconciliation runs efficient range-based set reconciliation over the
+  per-`(server, target)` dedup-id set (`protocol-lib::negentropy`, pure Rust +
+  wasm), so `AdvancedClient::reconcile` transfers **O(diff)** (only the differing
+  ids via `POST /negentropy` round-trips + `POST /annotations/by-id`), not O(all).
+  The full pull is kept as the labeled `ReconcileVia::FullPull` fallback for peers
+  that do not advertise the `negentropy` capability. The acceptance test seeds 500
+  items, then 5 backdated inserts, and asserts the second reconcile transfers
+  exactly 5 in `< 10` rounds.
 
 ### M8 — widgets + Firefox extension + interop demo ✅ [#components-3,9,5]
 Drop-in Web Components (`<freedback-stars/thumb/scalar/comment/tag>`) — vanilla

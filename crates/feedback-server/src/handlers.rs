@@ -248,13 +248,89 @@ pub async fn get_sync(
     Ok(Json(json!(items)))
 }
 
+/// Body of `POST /negentropy`: the target whose set is reconciled plus the
+/// client's range message for this round.
+#[derive(Debug, Deserialize)]
+pub struct NegentropyBody {
+    /// The target URI whose annotation set is being reconciled.
+    pub target: String,
+    /// The client's per-range claims for this round.
+    pub message: freedback_protocol::Message,
+}
+
+/// Build the server's sorted negentropy item set (`(iat, dedup_id)`) for a
+/// target — the **full** id set, NOT collapsed to latest edits, since
+/// reconciliation diffs content-addressed ids one-for-one.
+async fn negentropy_items(
+    state: &AppState,
+    target: &str,
+) -> Result<Vec<freedback_protocol::Item>, ApiError> {
+    let page = state
+        .store
+        .query(&StoreQuery {
+            target: Some(target.to_string()),
+            page: 0,
+            page_size: 0, // 0 = all
+        })
+        .await?;
+    let mut items = Vec::with_capacity(page.items.len());
+    for ann in &page.items {
+        items.push(freedback_protocol::Item::new(
+            ann.iat().unwrap_or(0),
+            dedup_id(ann)?,
+        ));
+    }
+    Ok(freedback_protocol::negentropy::sorted(items))
+}
+
+/// `POST /negentropy` — one round of NIP-77-style range reconciliation.
+///
+/// The client posts its per-range claims; the server answers each range over its
+/// own set (matching fingerprints settle, mismatches split/recurse, small ranges
+/// return explicit ids). Stateless: the server reads only its set, so each round
+/// is an independent request (INVARIANT 7, HTTP batch not real-time).
+pub async fn post_negentropy(
+    State(state): State<AppState>,
+    Json(body): Json<NegentropyBody>,
+) -> Result<Json<freedback_protocol::Message>, ApiError> {
+    let items = negentropy_items(&state, &body.target).await?;
+    let reply = freedback_protocol::negentropy::respond(&items, &body.message);
+    Ok(Json(reply))
+}
+
+/// Body of `POST /annotations/by-id`: the dedup ids to fetch in bulk.
+#[derive(Debug, Deserialize)]
+pub struct ByIdBody {
+    /// The dedup ids to fetch.
+    pub ids: Vec<String>,
+}
+
+/// `POST /annotations/by-id` — bulk fetch annotations by dedup id.
+///
+/// The reconcile path resolves a small set of `need` ids via negentropy, then
+/// fetches exactly those (and no more), keeping the transfer O(diff). Unknown
+/// ids are silently skipped.
+pub async fn post_by_id(
+    State(state): State<AppState>,
+    Json(body): Json<ByIdBody>,
+) -> Result<Json<Value>, ApiError> {
+    let mut out = Vec::with_capacity(body.ids.len());
+    for id in &body.ids {
+        if let Some(mut ann) = state.store.get(id).await? {
+            ann.id = Some(format!("{}/annotations/{}", state.base_url, id));
+            out.push(ann);
+        }
+    }
+    Ok(Json(json!(out)))
+}
+
 /// `GET /.well-known/freedback` — capabilities self-description.
 pub async fn well_known(State(state): State<AppState>) -> Json<Value> {
     let mut doc = json!({
         "version": env!("CARGO_PKG_VERSION"),
         "protocol": "freedback/1",
         "formats": ["application/ld+json"],
-        "capabilities": ["wap-container", "sync-cursor", "jws-identity", "oauth-identity", "jwt-export"],
+        "capabilities": ["wap-container", "sync-cursor", "jws-identity", "oauth-identity", "jwt-export", "negentropy"],
         "conformsTo": "https://freedback.org/profile/1",
         "links": [
             { "rel": "self", "href": format!("{}/.well-known/freedback", state.base_url) },
