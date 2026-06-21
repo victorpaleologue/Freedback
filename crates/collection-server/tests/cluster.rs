@@ -56,6 +56,18 @@ async fn spawn_collection(rate: RateLimit) -> (String, ColState) {
     (base, state)
 }
 
+/// Serve an already-built state on an ephemeral port, returning the base URL and
+/// the server task handle (so the test can abort it to release file locks).
+async fn serve_state(state: ColState) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = build_col(state);
+    let handle = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (base, handle)
+}
+
 #[tokio::test]
 async fn equivalent_uris_unify_across_servers() {
     let fb_a = spawn_feedback(&[signed(A, 4.0)]).await;
@@ -216,4 +228,108 @@ async fn rate_limiter_caps_upstream_bursts() {
         last_total, 1,
         "cache serves results once the budget is spent"
     );
+}
+
+/// A collection-server restart preserves its registered servers, the URI
+/// equivalence class, and the per-`(server, uri)` cache (issue #23 acceptance).
+#[tokio::test]
+async fn persisted_state_survives_restart() {
+    // Upstreams stay up across the collection restart. max-age=300 so the first
+    // run caches items and a generous freshness window is recorded.
+    let fb_a = spawn_feedback_maxage(&[signed(A, 4.0)], 300).await;
+    let fb_b = spawn_feedback_maxage(&[signed(B, 5.0)], 300).await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("collection-state.redb");
+    let http = reqwest::Client::new();
+
+    // --- run #1: register servers, assert A ≡ B, warm the cache, then stop. ---
+    {
+        let state =
+            ColState::with_persistence("http://restart.test", RateLimit::default(), &db).unwrap();
+        let (col, handle) = serve_state(state).await;
+        state_register(&http, &col, &fb_a).await;
+        state_register(&http, &col, &fb_b).await;
+
+        let resp = http
+            .post(format!("{col}/equivalence"))
+            .json(&json!({ "a": A, "b": B, "proof": "test" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let idx: Value = http
+            .get(format!("{col}/index?target={A}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            idx["total"], 2,
+            "run #1 unifies across the equivalence class"
+        );
+
+        // Stop run #1 and release the redb file lock.
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    // --- run #2: a fresh process reopening the same state file. ---
+    let state2 =
+        ColState::with_persistence("http://restart.test", RateLimit::default(), &db).unwrap();
+    let (col2, _h2) = serve_state(state2).await;
+
+    // Servers were reloaded.
+    let servers: Value = http
+        .get(format!("{col2}/servers"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let list = servers["servers"].as_array().unwrap();
+    assert_eq!(list.len(), 2, "registered servers persisted across restart");
+
+    // Equivalence was reloaded.
+    let eq: Value = http
+        .get(format!("{col2}/equivalence?uri={A}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let class = eq["class"].as_array().unwrap();
+    assert!(
+        class.iter().any(|u| u == A) && class.iter().any(|u| u == B),
+        "equivalence class persisted across restart, got {class:?}"
+    );
+
+    // Index still unifies A and B — cache + equivalence both survived.
+    let idx: Value = http
+        .get(format!("{col2}/index?target={A}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        idx["total"], 2,
+        "run #2 still unifies across the persisted equivalence class"
+    );
+}
+
+async fn state_register(http: &reqwest::Client, col: &str, server: &str) {
+    let resp = http
+        .post(format!("{col}/servers"))
+        .json(&json!({ "url": server }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "register {server}");
 }
