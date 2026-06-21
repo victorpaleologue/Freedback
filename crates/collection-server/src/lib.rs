@@ -1,13 +1,16 @@
 //! Freedback collection / aggregation server (component 7).
 //!
 //! Aggregates feedback for a URI across registered feedback servers — politely:
-//! it caches per `(server, uri)`, revalidates with `If-None-Match` (cheap 304s),
-//! rate-limits per upstream host with a token bucket, dedups across servers by
-//! content-addressed id, and unifies results across **equivalent** URIs.
+//! it caches per `(server, uri)`, honors the upstream `Cache-Control: max-age`
+//! (reusing a fresh page with **no** request at all), and otherwise revalidates
+//! with `If-None-Match` / `If-Modified-Since` (cheap 304s). It rate-limits per
+//! upstream host with a token bucket, dedups across servers by content-addressed
+//! id, and unifies results across **equivalent** URIs.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
@@ -24,10 +27,24 @@ use equivalence::EquivalenceSet;
 use token_bucket::TokenBucket;
 
 /// Per-`(server, uri)` cache entry for conditional revalidation.
+///
+/// Holds both validators (`ETag`, `Last-Modified`) for cheap 304s and a
+/// freshness deadline derived from the upstream `Cache-Control: max-age`, within
+/// which the entry is reused with **no** upstream request at all.
 #[derive(Default, Clone)]
 struct CacheEntry {
     etag: Option<String>,
+    last_modified: Option<String>,
+    /// `Instant` until which the entry is fresh (from `Cache-Control: max-age`).
+    fresh_until: Option<Instant>,
     items: Vec<Annotation>,
+}
+
+impl CacheEntry {
+    /// Still within the upstream-granted freshness lifetime?
+    fn is_fresh(&self) -> bool {
+        self.fresh_until.is_some_and(|t| Instant::now() < t)
+    }
 }
 
 /// Rate-limit configuration.
@@ -59,6 +76,7 @@ pub struct AppState {
     base_url: String,
     upstream_calls: Arc<AtomicU64>,
     upstream_304: Arc<AtomicU64>,
+    cache_hits: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -79,6 +97,7 @@ impl AppState {
             base_url: base_url.into(),
             upstream_calls: Arc::new(AtomicU64::new(0)),
             upstream_304: Arc::new(AtomicU64::new(0)),
+            cache_hits: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -94,6 +113,11 @@ impl AppState {
     /// Of those, how many returned `304 Not Modified`.
     pub fn upstream_304(&self) -> u64 {
         self.upstream_304.load(Ordering::Relaxed)
+    }
+    /// Reads served from a still-fresh cache entry with **no** upstream request
+    /// (the `Cache-Control: max-age` freshness win).
+    pub fn cache_hits(&self) -> u64 {
+        self.cache_hits.load(Ordering::Relaxed)
     }
 
     /// Try to spend one token for `host`.
@@ -231,6 +255,14 @@ impl AppState {
             .cloned()
             .unwrap_or_default();
 
+        // Freshness (RFC 7234): while the upstream `Cache-Control: max-age` has
+        // not elapsed, reuse the entry with no upstream request — not even a
+        // conditional one. This is the cheapest path and spends no rate budget.
+        if cached.is_fresh() {
+            self.cache_hits.fetch_add(1, Ordering::Relaxed);
+            return cached.items;
+        }
+
         // Rate limit per host: if no token, serve whatever we have cached.
         if !self.allow(&host_of(server)) {
             return cached.items;
@@ -238,8 +270,13 @@ impl AppState {
 
         let url = format!("{server}/annotations/?target={}", urlencode(uri));
         let mut req = self.http.get(&url);
+        // Send both validators we hold so the upstream can answer 304 by ETag or
+        // by modification date.
         if let Some(etag) = &cached.etag {
             req = req.header(axum::http::header::IF_NONE_MATCH, etag);
+        }
+        if let Some(lm) = &cached.last_modified {
+            req = req.header(axum::http::header::IF_MODIFIED_SINCE, lm);
         }
 
         self.upstream_calls.fetch_add(1, Ordering::Relaxed);
@@ -249,31 +286,79 @@ impl AppState {
 
         if resp.status() == axum::http::StatusCode::NOT_MODIFIED {
             self.upstream_304.fetch_add(1, Ordering::Relaxed);
+            // A 304 may refresh freshness (and the validators) without a body.
+            let fresh_until = max_age(resp.headers()).map(|d| Instant::now() + d);
+            let mut entry = cached.clone();
+            entry.fresh_until = fresh_until;
+            if let Some(lm) = last_modified_of(resp.headers()) {
+                entry.last_modified = Some(lm);
+            }
+            self.cache.lock().unwrap().insert(key, entry);
             return cached.items;
         }
         if !resp.status().is_success() {
             return cached.items;
         }
 
-        let etag = resp
-            .headers()
+        let headers = resp.headers().clone();
+        let etag = headers
             .get(axum::http::header::ETAG)
             .and_then(|v| v.to_str().ok())
             .map(str::to_string);
+        let last_modified = last_modified_of(&headers);
+        let fresh_until = max_age(&headers).map(|d| Instant::now() + d);
+        let no_store = no_store(&headers);
+
         let Ok(doc) = resp.json::<Value>().await else {
             return cached.items;
         };
         let items = parse_items(&doc);
 
-        self.cache.lock().unwrap().insert(
-            key,
-            CacheEntry {
-                etag,
-                items: items.clone(),
-            },
-        );
+        if !no_store {
+            self.cache.lock().unwrap().insert(
+                key,
+                CacheEntry {
+                    etag,
+                    last_modified,
+                    fresh_until,
+                    items: items.clone(),
+                },
+            );
+        }
         items
     }
+}
+
+/// Parse `Cache-Control: max-age=<n>` (seconds) from response headers.
+fn max_age(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    let cc = headers
+        .get(axum::http::header::CACHE_CONTROL)?
+        .to_str()
+        .ok()?;
+    for directive in cc.split(',') {
+        let directive = directive.trim();
+        if let Some(v) = directive.strip_prefix("max-age=") {
+            return v.trim().parse::<u64>().ok().map(Duration::from_secs);
+        }
+    }
+    None
+}
+
+/// Does `Cache-Control` forbid storing the response?
+fn no_store(headers: &reqwest::header::HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::CACHE_CONTROL)
+        .and_then(|v| v.to_str().ok())
+        .map(|cc| cc.split(',').any(|d| d.trim() == "no-store"))
+        .unwrap_or(false)
+}
+
+/// Extract the `Last-Modified` validator string, if any.
+fn last_modified_of(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    headers
+        .get(axum::http::header::LAST_MODIFIED)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
 }
 
 fn parse_items(doc: &Value) -> Vec<Annotation> {
@@ -320,6 +405,7 @@ async fn metrics(State(state): State<AppState>) -> Json<Value> {
     Json(json!({
         "upstreamCalls": state.upstream_calls(),
         "upstream304": state.upstream_304(),
+        "cacheHits": state.cache_hits(),
     }))
 }
 

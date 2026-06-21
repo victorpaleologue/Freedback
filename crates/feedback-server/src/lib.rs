@@ -18,6 +18,7 @@ pub mod auth;
 pub mod collection;
 pub mod error;
 pub mod handlers;
+pub mod httpdate;
 
 pub use auth::OAuth;
 pub use error::ApiError;
@@ -35,6 +36,10 @@ pub struct AppState {
     pub oauth: Arc<OAuth>,
     /// Default page size for collection reads.
     pub page_size: usize,
+    /// `max-age` (seconds) advertised in the collection `Cache-Control` header,
+    /// so a polite aggregator can serve from its cache without revalidating
+    /// while the page is still fresh.
+    pub cache_max_age: u64,
 }
 
 impl AppState {
@@ -46,7 +51,14 @@ impl AppState {
             base_url: base_url.into(),
             oauth: Arc::new(OAuth::default()),
             page_size: 50,
+            cache_max_age: 30,
         }
+    }
+
+    /// Override the collection `Cache-Control: max-age` (builder style).
+    pub fn with_cache_max_age(mut self, secs: u64) -> Self {
+        self.cache_max_age = secs;
+        self
     }
 
     /// Replace the OAuth token map (builder style).

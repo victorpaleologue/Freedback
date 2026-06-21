@@ -53,6 +53,33 @@ fn parse_annotations(value: Value) -> Result<Vec<Annotation>, ApiError> {
     }
 }
 
+/// Decide whether a conditional GET may answer `304 Not Modified`, given the
+/// request headers and the freshly built page's validators.
+///
+/// `If-None-Match` wins when present (RFC 7232 §3.3): a matching ETag → 304.
+/// Otherwise `If-Modified-Since` is honored — `304` when the page's
+/// `Last-Modified` is not newer than the client's timestamp.
+fn not_modified(req: &HeaderMap, page: &HeaderMap) -> bool {
+    if let Some(inm) = req.get(axum::http::header::IF_NONE_MATCH) {
+        return page
+            .get(axum::http::header::ETAG)
+            .map(|etag| inm == etag)
+            .unwrap_or(false);
+    }
+    if let (Some(ims), Some(lm)) = (
+        req.get(axum::http::header::IF_MODIFIED_SINCE),
+        page.get(axum::http::header::LAST_MODIFIED),
+    ) {
+        if let (Some(ims), Some(lm)) = (
+            ims.to_str().ok().and_then(crate::httpdate::parse),
+            lm.to_str().ok().and_then(crate::httpdate::parse),
+        ) {
+            return lm <= ims;
+        }
+    }
+    false
+}
+
 /// `POST /annotations/` — POST-to-container (single annotation or batch).
 pub async fn post_annotations(
     State(state): State<AppState>,
@@ -131,21 +158,27 @@ pub async fn get_collection(
         page_size,
         result.total,
         &result.items,
+        state.cache_max_age,
     );
 
-    // Conditional GET: 304 when the client's ETag matches.
-    if let (Some(inm), Some(etag)) = (
-        headers.get(axum::http::header::IF_NONE_MATCH),
-        view.headers.get(axum::http::header::ETAG),
-    ) {
-        if inm == etag {
-            let mut not_modified = axum::response::Response::new(axum::body::Body::empty());
-            *not_modified.status_mut() = StatusCode::NOT_MODIFIED;
-            not_modified
-                .headers_mut()
-                .insert(axum::http::header::ETAG, etag.clone());
-            return Ok(not_modified);
+    // Conditional GET. Per RFC 7232, `If-None-Match` takes precedence over
+    // `If-Modified-Since`; we evaluate the ETag first, then fall back to the
+    // `Last-Modified` validator so an aggregator that only kept the date still
+    // earns a cheap 304.
+    if not_modified(&headers, &view.headers) {
+        let mut resp = axum::response::Response::new(axum::body::Body::empty());
+        *resp.status_mut() = StatusCode::NOT_MODIFIED;
+        // Echo the validators a 304 is allowed to carry.
+        for h in [
+            axum::http::header::ETAG,
+            axum::http::header::CACHE_CONTROL,
+            axum::http::header::LAST_MODIFIED,
+        ] {
+            if let Some(v) = view.headers.get(&h) {
+                resp.headers_mut().insert(h, v.clone());
+            }
         }
+        return Ok(resp);
     }
 
     Ok((view.headers, Json(view.body)).into_response())

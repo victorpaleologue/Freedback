@@ -340,6 +340,73 @@ async fn repost_is_idempotent() {
 }
 
 #[tokio::test]
+async fn collection_emits_freshness_and_validator_headers() {
+    let app = app();
+    let (_id, ann) = signed_star(4.0);
+    let _ = send(&app, "POST", "/annotations/", None, Some(ann)).await;
+
+    let (status, headers, _body) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let cc = headers.get("cache-control").unwrap().to_str().unwrap();
+    assert!(cc.contains("max-age="), "Cache-Control present: {cc}");
+    let lm = headers.get("last-modified").unwrap().to_str().unwrap();
+    assert!(lm.ends_with(" GMT"), "Last-Modified is an HTTP-date: {lm}");
+}
+
+#[tokio::test]
+async fn if_modified_since_earns_a_304() {
+    let app = app();
+    let (_id, ann) = signed_star(4.0);
+    let _ = send(&app, "POST", "/annotations/", None, Some(ann)).await;
+
+    // Read once to learn the page's Last-Modified.
+    let (_s, headers, _b) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/1",
+        None,
+        None,
+    )
+    .await;
+    let last_modified = headers.get("last-modified").unwrap().to_str().unwrap();
+
+    // A conditional GET with that exact date (no ETag) → 304.
+    let req = axum::http::Request::builder()
+        .method("GET")
+        .uri("/annotations/?target=https://example.com/item/1")
+        .header("if-modified-since", last_modified)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_MODIFIED,
+        "If-Modified-Since at the page mtime must 304"
+    );
+
+    // An older If-Modified-Since (the epoch) → full 200 body.
+    let req = axum::http::Request::builder()
+        .method("GET")
+        .uri("/annotations/?target=https://example.com/item/1")
+        .header("if-modified-since", "Thu, 01 Jan 1970 00:00:00 GMT")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "a stale If-Modified-Since must return the fresh representation"
+    );
+}
+
+#[tokio::test]
 async fn well_known_advertises_capabilities() {
     let app = app();
     let (status, _h, doc) = send(&app, "GET", "/.well-known/freedback", None, None).await;

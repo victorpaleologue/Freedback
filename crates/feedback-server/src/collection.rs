@@ -4,10 +4,12 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use axum::http::header::{ETAG, LINK};
+use axum::http::header::{CACHE_CONTROL, ETAG, LAST_MODIFIED, LINK};
 use axum::http::{HeaderMap, HeaderValue};
 use freedback_protocol::Annotation;
 use serde_json::{json, Value};
+
+use crate::httpdate;
 
 /// A rendered collection page: JSON body + response headers.
 pub struct PageView {
@@ -35,6 +37,7 @@ pub fn build_page(
     page_size: usize,
     total: usize,
     items: &[Annotation],
+    cache_max_age: u64,
 ) -> PageView {
     let start_index = page.saturating_mul(page_size);
     let canonical = page_url(base, target, page);
@@ -85,8 +88,25 @@ pub fn build_page(
     if let Ok(v) = HeaderValue::from_str(&etag) {
         headers.insert(ETAG, v);
     }
+    // Freshness: a polite aggregator may reuse the page without revalidating
+    // for `max-age` seconds.
+    if let Ok(v) = HeaderValue::from_str(&format!("max-age={cache_max_age}")) {
+        headers.insert(CACHE_CONTROL, v);
+    }
+    // Validator: the newest item on the page is the representation's mtime, so a
+    // conditional `If-Modified-Since` can earn a cheap 304 even without an ETag.
+    if let Some(v) = last_modified(items).and_then(|s| HeaderValue::from_str(&s).ok()) {
+        headers.insert(LAST_MODIFIED, v);
+    }
 
     PageView { body, headers }
+}
+
+/// The most recent `created` time among `items`, as an HTTP-date — the page's
+/// `Last-Modified`. `None` for an empty page (nothing to date).
+fn last_modified(items: &[Annotation]) -> Option<String> {
+    let newest = items.iter().filter_map(Annotation::iat).max()?;
+    httpdate::format(newest)
 }
 
 fn weak_etag(total: usize, items: &[Annotation]) -> String {
