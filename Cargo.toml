@@ -4,6 +4,7 @@ members = [
     "crates/protocol-lib",
     "crates/storage",
     "crates/feedback-server",
+    "crates/cli-client",
 ]
 
 [workspace.package]

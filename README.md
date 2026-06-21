@@ -18,10 +18,12 @@ green on **native + wasm32**:
 - ✅ Web Annotation model with typed rating/comment/tag bodies
 - ✅ Content-addressed dedup id (RFC 8785 JCS + SHA-256)
 - ✅ Self-signed ECDSA P-256 identity (detached ES256 signatures)
-- ✅ Shapes-driven SHACL-Core-subset validation (runs in the browser too)
+- ✅ Shapes-driven SHACL-Core-subset validation (native; browsers validate via
+  the server, per ADR 0004)
 - ✅ Storage trait + in-memory and Oxigraph backends (shared conformance suite)
 - ✅ Feedback server (axum): WAP container, paging, `/sync`, dual auth, well-known
-- ⏳ Discovery / collection servers, clients, widgets, extension —
+- ✅ Basic client (native + wasm32): read / write / sync over endpoints & files
+- ⏳ Discovery / collection servers, widgets, extension —
   see [`docs/roadmap.md`](docs/roadmap.md)
 
 ## Quick start

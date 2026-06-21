@@ -8,14 +8,17 @@
 //! crate must never violate, and `docs/` for the design rationale.
 //!
 //! ## Feature flags
-//! - `wasm`: browser build marker (enables the `js` RNG backend). WASM
-//!   consumers use `default-features = false`.
+//! - `validation` (default, native): shapes-driven SHACL-Core-subset validation
+//!   ([`validation`]) built on the pure-Rust `oxrdf`/`oxttl` parsers.
+//! - `wasm`: browser build marker (enables the `js` RNG backend). WASM consumers
+//!   use `default-features = false` (+ `wasm`), which omits `validation` and the
+//!   RDF dependency chain; they rely on the server to validate on write (see
+//!   `docs/adr/0004`). The model, canonicalization, dedup id, and P-256 signing
+//!   all remain available in the browser.
 //!
-//! Validation is a shapes-driven SHACL-Core-subset interpreter ([`validation`])
-//! built on pure-Rust RDF parsers, so it runs on **both** native and `wasm32`
-//! (widgets can pre-validate). Full JSON-LD interop (expanding/compacting
-//! *external* annotations via the `json-ld` crate) is a later milestone; our own
-//! pipeline emits compact JSON-LD directly and converts to RDF via [`rdf`].
+//! The model → RDF mapping in [`rdf`] is pure Rust and always available; full
+//! JSON-LD interop (expanding/compacting *external* annotations) is a later
+//! milestone.
 
 pub mod canonical;
 pub mod context;
@@ -23,10 +26,14 @@ pub mod error;
 pub mod identity;
 pub mod model;
 pub mod rdf;
+
+#[cfg(feature = "validation")]
 pub mod validation;
 
 pub use canonical::{canonical_bytes, dedup_id};
 pub use error::{Error, Result};
 pub use identity::{verify_annotation, Identity};
 pub use model::{Annotation, Body, Creator, Motivation, Selector, Signature, Target};
+
+#[cfg(feature = "validation")]
 pub use validation::{validate_annotation, ValidationOutcome, Validator};

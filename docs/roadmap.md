@@ -41,13 +41,15 @@ POST-to-container (WAP), paginated reads (`AnnotationPage` + `Link` rels),
   integration tests). Remaining: full W3C container conformance suite, batch
   partial-failure semantics, `PUT /submit/{jwt}` export ingest.
 
-### M4 — cli-client (native + wasm) [#component-4]
+### M4 — cli-client (native + wasm) ✅ [#component-4]
 `read` / `write` / `sync`; distinguish collection points (read aggregates) from
-publication points (POST). `Transport` trait: native fs+reqwest, wasm
-fetch+storage.
+publication points (POST) as distinct types. `Transport` trait abstracts I/O
+(native fs + reqwest; wasm Fetch). The native `freedback` CLI signs & posts.
 - **Depends on:** M3
-- **Acceptance:** same code path reads a file fixture and an endpoint; compiles
-  green for both targets in CI.
+- **Acceptance:** same code path reads a file fixture and an endpoint; lib builds
+  green for **both** targets in CI (wasm job added). ✅ (3 e2e tests:
+  write→read→sync against a live server + file read/append). WASM uses the core
+  protocol-lib (no validation chain) per ADR 0004.
 
 ### M5 — discovery-server (registry) [#component-2]
 `/.well-known/freedback` self-description; `POST /announce` with verifying

@@ -50,8 +50,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build protocol-lib (wasm)
         run: cargo build -p freedback-protocol --no-default-features --features wasm --target wasm32-unknown-unknown
-      # As dual-target client crates land they are added here, e.g.:
-      # - run: cargo build -p freedback-cli-client --no-default-features --features wasm --target wasm32-unknown-unknown
+      - name: build cli-client lib (wasm)
+        run: cargo build -p freedback-cli-client --no-default-features --features wasm --target wasm32-unknown-unknown --lib
 
   # Ontology: the served RDF/JSON-LD artifacts must parse.
   ontology:
