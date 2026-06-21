@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # Native: format, lint, test the whole workspace.
+  native:
+    name: native (fmt · clippy · test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable + components)
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - name: Install Clang (Oxigraph/RocksDB native build)
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --all-features
+      - name: test
+        run: cargo test --workspace --all-features
+
+  # WASM: the dual-target crates must build for the browser target.
+  wasm:
+    name: wasm32 (browser build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable + wasm target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: build protocol-lib (wasm)
+        run: cargo build -p freedback-protocol --no-default-features --features wasm --target wasm32-unknown-unknown
+      # As dual-target client crates land they are added here, e.g.:
+      # - run: cargo build -p freedback-cli-client --no-default-features --features wasm --target wasm32-unknown-unknown
+
+  # Ontology: the served RDF/JSON-LD artifacts must parse.
+  ontology:
+    name: ontology (parse checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rapper (raptor2) + jq
+        run: sudo apt-get update && sudo apt-get install -y raptor2-utils jq
+      - name: Validate Turtle (ontology + shapes)
+        run: |
+          rapper -i turtle -c ontology/freedback.ttl
+          rapper -i turtle -c ontology/shapes.ttl
+      - name: Validate JSON-LD context is well-formed JSON
+        run: jq -e . ontology/context.jsonld > /dev/null
