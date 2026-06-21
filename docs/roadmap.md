@@ -27,7 +27,7 @@ carries its resolving commit.
 | M2 storage | #3 | `a5f30d9` | closed ✅ (SQLite mock added in #23, ADR 0016) |
 | M3 feedback-server | #4 | `099c978` | closed ✅ |
 | M4 cli-client | #5 | `98000ef` | closed ✅ |
-| M5 discovery-server | #6 | `347073b` | closed ✅ (NIP-65 outbox resolver added, ADR 0014) |
+| M5 discovery-server | #6 | `347073b` | closed ✅ (NIP-65 outbox resolver, ADR 0014; liveness/signed-announce/gossip hardening in #25, ADR 0015) |
 | M6 collection-server | #7 | `dd997ad` | closed ✅ (cache freshness + validators, ADR 0012; persistent state in #23, ADR 0016) |
 | M7 advanced-client | #8 | `1a70947` | closed ✅ (negentropy deferred) |
 | M9 equivalence prompt | #10 | `feeebbd` | closed ✅ (prompt-only by scope) |
@@ -91,8 +91,12 @@ outbox resolver.
   (2 cluster tests on real ephemeral ports). **NIP-65 outbox resolver** shipped
   (ADR 0014): issuers `POST /relays` a self-signed, replaceable relay list
   (verified signature + issuer/key binding), and `GET /resolve?issuer=` returns
-  where that key publishes with no fan-out (3 unit + 1 cluster test). Remaining:
-  server liveness/expiry, signed announces, cross-registry relay-list gossip.
+  where that key publishes with no fan-out (3 unit + 1 cluster test).
+  **Hardening** shipped (#25, ADR 0015): periodic liveness/expiry sweep (stale
+  servers drop from `/servers` past a TTL grace window, injectable clock),
+  optional **signed announces** (detached ES256 over the URL, verified against
+  the server's published key to prove key control), and **cross-registry
+  relay-list gossip** (signed lists replicate and re-verify across registries).
 
 ### M6 — collection-server (aggregation) ✅ [#component-7]
 Multi-server cache with conditional requests (ETag/If-None-Match) + per-host
