@@ -29,6 +29,10 @@ COPY --from=builder /app/target/release/freedback-collection-server /usr/local/b
 COPY --from=builder /app/ontology /srv/ontology
 
 ENV FREEDBACK_BIND=0.0.0.0:8080
+# Durable demo storage: point the feedback server at a snapshot file under the
+# mounted volume to survive restarts (see docs/adr/0008). Unset by default.
+RUN mkdir -p /data
+VOLUME ["/data"]
 EXPOSE 8080
 
 # Default to the feedback server; compose / `docker run ... <cmd>` overrides this.

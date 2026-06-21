@@ -543,6 +543,7 @@ dependencies = [
  "oxigraph",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
 ]

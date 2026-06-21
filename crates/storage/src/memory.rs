@@ -101,4 +101,16 @@ mod tests {
     async fn memory_store_conformance() {
         conformance::run(&MemoryStore::new()).await;
     }
+
+    #[tokio::test]
+    async fn memory_store_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snap.jsonl");
+        conformance::persistence(
+            &MemoryStore::new(),
+            &MemoryStore::new(),
+            path.to_str().unwrap(),
+        )
+        .await;
+    }
 }

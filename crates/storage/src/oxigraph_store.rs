@@ -169,4 +169,16 @@ mod tests {
     async fn oxigraph_store_conformance() {
         conformance::run(&OxigraphStore::new().unwrap()).await;
     }
+
+    #[tokio::test]
+    async fn oxigraph_store_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snap.jsonl");
+        conformance::persistence(
+            &OxigraphStore::new().unwrap(),
+            &OxigraphStore::new().unwrap(),
+            path.to_str().unwrap(),
+        )
+        .await;
+    }
 }

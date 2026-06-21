@@ -84,6 +84,7 @@ The non-obvious decisions are written up as ADRs in [`docs/adr/`](./adr):
 - [0004 — All validation in SHACL, never OWL/RDFS](./adr/0004-validation-in-shacl.md)
 - [0005 — Storage behind a trait; Oxigraph primary](./adr/0005-storage-trait-oxigraph.md)
 - [0006 — Discovery: flat list first, resolver second](./adr/0006-discovery-flat-then-resolver.md)
+- [0008 — Durable demo storage via JSON-Lines snapshots](./adr/0008-snapshot-persistence.md)
 
 See [`roadmap.md`](./roadmap.md) for milestones and the issue map, and
 [`attributions.md`](./attributions.md) for harvested-code provenance.
