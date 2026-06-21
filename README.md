@@ -28,9 +28,10 @@ green on **native + wasm32**:
 - ✅ Advanced client: local redb sync copy with resume cursor + dedup-on-merge
 - ✅ Equivalence-detection prompt (`agent-prompts/equivalence.md`)
 - ✅ Deployment: `docker compose up` for the full stack; Pages serves the ontology
-- ⏳ Web widgets, Firefox extension, interop demo — see [`docs/roadmap.md`](docs/roadmap.md)
+- ✅ Web widgets (vanilla Web Components), Firefox MV3 popup, W3C interop demo
 
-7 of 10 milestones; the whole Rust backbone is done and tested (43 tests).
+All 10 milestones have a working deliverable; the Rust backbone is done and
+tested (43 Rust tests + JS helper tests).
 **Naming note:** an unrelated dormant npm `freedback` exists and holds
 `freedback.dev` — see [`docs/naming.md`](docs/naming.md).
 

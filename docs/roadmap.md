@@ -106,13 +106,20 @@ dedup-on-merge with edit supersession; `reconcile_full` for backdated items.
   backdated reconciliation uses a full pull as a stand-in for negentropy
   (NIP-77) — the efficient range-based protocol remains future work.
 
-### M8 — widgets + Firefox extension + interop demo [#components-3,9,5]
-Drop-in Web Components (stars/scalar/thumb/comment/tag) importing the wasm
-`protocol-lib`; Firefox extension listing feedback for the current page;
-Annotorious/RecogitoJS demo loading a Freedback collection page.
+### M8 — widgets + Firefox extension + interop demo ✅ (core) [#components-3,9,5]
+Drop-in Web Components (`<freedback-stars/thumb/comment>`) — vanilla JS, no build
+step; read-only renders aggregates, `data-publish` POSTs a W3C annotation. A
+Firefox (MV3) popup lists feedback for the active tab's URL. A dependency-free
+interop demo renders a Freedback collection page as plain W3C annotations.
 - **Depends on:** M4 (read/write paths), M6 (aggregates)
-- **Acceptance:** read-only widget renders aggregates; publish widget round-trips
-  a POST; comment/tag bodies render in a pure W3C client without transformation.
+- **Acceptance:** read-only widget renders aggregates; publish widget builds &
+  POSTs a valid annotation; comment/tag render in a pure W3C client without
+  transformation, ratings as typed bodies. ✅ Pure helpers unit-tested in CI
+  (`widgets/test.cjs`) + JS syntax/manifest checks. **Note:** not browser-E2E'd
+  in CI (no headless browser infra); manual via `widgets/demo.html`. WebCrypto
+  P-256 signing and `<freedback-scalar>`/`<freedback-tag>` + wasm `protocol-lib`
+  glue are deferred; publishing currently uses the OAuth bearer path. Publish
+  under **`@freedback/widgets`** (the bare npm name is taken — `docs/naming.md`).
 
 ### M9 — equivalence-detection prompt ✅ [#component-8]
 **Scope (per maintainer): ship a prompt, not an LLM client.** A self-contained

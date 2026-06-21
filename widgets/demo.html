@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback widgets demo</title>
+  <style>
+    body { font: 16px/1.6 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+    .fb-row { display: flex; gap: .25rem; align-items: center; }
+    .fb-stars button, .fb-thumb button { font-size: 1.25rem; background: none; border: none; cursor: pointer; }
+    .fb-stars button:disabled, .fb-thumb button:disabled { cursor: default; opacity: .6; }
+    .fb-agg { color: #444; margin-left: .5rem; }
+    .fb-status { color: #c00; margin-left: .5rem; font-size: .85rem; }
+    .fb-in { flex: 1; padding: .35rem .5rem; }
+    code { background: #f3f3f3; padding: .1em .35em; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Freedback widgets</h1>
+  <p>Run the stack first: <code>docker compose up --build</code> (feedback :8080,
+  collection :8100). These widgets read aggregates from the collection server and
+  publish to the feedback server. Publishing needs auth — set a demo OAuth token
+  on the feedback server (<code>FREEDBACK_OAUTH_TOKEN/_APP/_USER</code>) and put it
+  in <code>data-token</code>, or the POST returns 401 (read-only still works).</p>
+
+  <div class="card">
+    <h3>Stars</h3>
+    <freedback-stars
+      data-target="https://example.com/item/1"
+      data-read="http://localhost:8100/index"
+      data-publish="http://localhost:8080/annotations/"></freedback-stars>
+  </div>
+
+  <div class="card">
+    <h3>Thumbs</h3>
+    <freedback-thumb
+      data-target="https://example.com/item/1"
+      data-read="http://localhost:8100/index"
+      data-publish="http://localhost:8080/annotations/"></freedback-thumb>
+  </div>
+
+  <div class="card">
+    <h3>Comments</h3>
+    <freedback-comment
+      data-target="https://example.com/item/1"
+      data-read="http://localhost:8100/index"
+      data-publish="http://localhost:8080/annotations/"></freedback-comment>
+  </div>
+
+  <div class="card">
+    <h3>Read-only (no <code>data-publish</code>)</h3>
+    <freedback-stars
+      data-target="https://example.com/item/1"
+      data-read="http://localhost:8100/index"></freedback-stars>
+  </div>
+
+  <script src="freedback-widgets.js"></script>
+</body>
+</html>

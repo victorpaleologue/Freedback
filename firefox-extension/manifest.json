@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Freedback",
+  "version": "0.1.0",
+  "description": "Show Freedback feedback for the page you're viewing.",
+  "action": {
+    "default_title": "Freedback",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "freedback@freedback.org"
+    }
+  }
+}
