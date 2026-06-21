@@ -350,8 +350,7 @@ async fn accepts_browser_signed_annotation_end_to_end() {
     ))
     .unwrap();
 
-    let (status, headers, body) =
-        send(&app, "POST", "/annotations/", None, Some(fixture)).await;
+    let (status, headers, body) = send(&app, "POST", "/annotations/", None, Some(fixture)).await;
     assert_eq!(
         status,
         StatusCode::CREATED,
