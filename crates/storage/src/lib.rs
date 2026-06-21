@@ -18,6 +18,11 @@ pub mod oxigraph_store;
 #[cfg(feature = "oxigraph")]
 pub use oxigraph_store::OxigraphStore;
 
+#[cfg(feature = "sqlite")]
+pub mod sqlite_store;
+#[cfg(feature = "sqlite")]
+pub use sqlite_store::SqliteStore;
+
 /// Storage errors.
 #[derive(Debug, Error)]
 pub enum StoreError {

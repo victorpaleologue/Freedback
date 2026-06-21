@@ -36,6 +36,7 @@ pub mod identity;
 pub mod jsonld;
 pub mod mangrove;
 pub mod model;
+pub mod negentropy;
 pub mod rdf;
 
 #[cfg(feature = "jsonld")]
@@ -51,6 +52,7 @@ pub use identity::{verify_annotation, Identity};
 pub use jsonld::from_jsonld;
 pub use mangrove::{from_mangrove_jwt, to_mangrove_jwt};
 pub use model::{Annotation, Body, Creator, Motivation, Selector, Signature, Target};
+pub use negentropy::{Item, Message, RangeMsg, Reconcile};
 
 #[cfg(feature = "validation")]
 pub use validation::{validate_annotation, ValidationOutcome, Validator};

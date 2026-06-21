@@ -22,3 +22,9 @@ target
 
 # Claude Code local harness state (agent worktrees, local settings)
 .claude/
+
+# Node / Playwright (widgets E2E harness — deps installed in CI, lockfile committed)
+node_modules/
+widgets/test-results/
+widgets/playwright-report/
+playwright/.cache/

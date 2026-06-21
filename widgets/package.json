@@ -1,0 +1,15 @@
+{
+  "name": "freedback-widgets",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Freedback drop-in widgets (component 3) — vanilla Web Components, plus a headless-browser E2E harness.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node test.cjs",
+    "test:e2e": "node e2e/run-e2e.cjs",
+    "e2e:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

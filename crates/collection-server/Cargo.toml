@@ -26,9 +26,11 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
+redb = { workspace = true }
 
 [dev-dependencies]
 freedback-feedback-server = { path = "../feedback-server" }
 freedback-storage = { path = "../storage" }
 freedback-protocol = { path = "../protocol-lib" }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+tempfile = "3"

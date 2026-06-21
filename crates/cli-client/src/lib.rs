@@ -211,6 +211,42 @@ impl<T: Transport> Client<T> {
         }
     }
 
+    /// One round of NIP-77-style negentropy reconciliation against a server's
+    /// `POST /negentropy`. Posts the client's range message for `target` and
+    /// returns the server's reply. The server is read-only over its set, so the
+    /// round is a plain stateless HTTP batch call (INVARIANT 7).
+    pub async fn negentropy_round(
+        &self,
+        point: &CollectionPoint,
+        target: &str,
+        message: &freedback_protocol::Message,
+    ) -> Result<freedback_protocol::Message> {
+        let url = negentropy_url(&point.sync_url)?;
+        let body = serde_json::to_string(&serde_json::json!({
+            "target": target,
+            "message": message,
+        }))?;
+        let text = self.transport.post_json(&url, &body, None).await?;
+        Ok(serde_json::from_str(&text)?)
+    }
+
+    /// Bulk-fetch annotations by dedup id from a server's `POST
+    /// /annotations/by-id`. The reconcile path fetches only the `need` ids
+    /// negentropy identified, keeping the transfer O(diff).
+    pub async fn fetch_by_id(
+        &self,
+        point: &CollectionPoint,
+        ids: &[String],
+    ) -> Result<Vec<Annotation>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let url = by_id_url(&point.annotations_url);
+        let body = serde_json::to_string(&serde_json::json!({ "ids": ids }))?;
+        let text = self.transport.post_json(&url, &body, None).await?;
+        parse_annotations(&text)
+    }
+
     /// Incremental sync against a feedback server's `/sync` cursor.
     pub async fn sync(
         &self,
@@ -251,6 +287,24 @@ fn parse_annotations(text: &str) -> Result<Vec<Annotation>> {
         .into_iter()
         .map(|v| serde_json::from_value(v).map_err(ClientError::from))
         .collect()
+}
+
+/// Derive the `/negentropy` endpoint from a feedback server's `/sync` cursor
+/// URL (they share a base). Returns `Unsupported` for a collection point that
+/// has no sync cursor (and therefore no negentropy endpoint).
+fn negentropy_url(sync_url: &str) -> Result<String> {
+    let base = sync_url
+        .strip_suffix("/sync")
+        .ok_or(ClientError::Unsupported(
+            "collection point has no /negentropy endpoint",
+        ))?;
+    Ok(format!("{base}/negentropy"))
+}
+
+/// Derive the bulk `by-id` endpoint from the collection's annotations URL
+/// (which ends in `/annotations/`).
+fn by_id_url(annotations_url: &str) -> String {
+    format!("{}/by-id", annotations_url.trim_end_matches('/'))
 }
 
 /// Minimal percent-encoding for query values.
