@@ -19,8 +19,10 @@
 //!
 //! ## Supported constraint components
 //! `sh:targetClass`, `sh:path`, `sh:minCount`, `sh:maxCount`, `sh:datatype`,
-//! `sh:minInclusive`, `sh:maxInclusive`, `sh:minLength`, `sh:in`, `sh:message`.
-//! Anything else in `shapes.ttl` is ignored (documented limitation).
+//! `sh:minInclusive`, `sh:maxInclusive`, `sh:minLength`, `sh:in`,
+//! `sh:lessThanOrEquals` (sibling-property comparison — custom rating scales,
+//! ADR 0009), `sh:message`. Anything else in `shapes.ttl` is ignored
+//! (documented limitation).
 
 use std::collections::BTreeMap;
 
@@ -358,6 +360,27 @@ fn eval_property(
             }
         }
     }
+
+    // sh:lessThanOrEquals (SHACL Core): every value of `path` must be <= every
+    // value of the referenced sibling property on the same focus node. This is
+    // what lets a rating be validated against its OWN declared worst/best scale
+    // (custom scales) — see ADR 0009.
+    if let Some(other) = shapes
+        .objects(ps, &sh("lessThanOrEquals"))
+        .first()
+        .and_then(Obj::as_node)
+    {
+        let others: Vec<f64> = data
+            .objects(focus, other)
+            .iter()
+            .filter_map(Obj::as_num)
+            .collect();
+        for v in values.iter().filter_map(Obj::as_num) {
+            if others.iter().any(|o| v > *o) {
+                out.push(msg());
+            }
+        }
+    }
 }
 
 /// Validate an annotation against the default Freedback profile shapes.
@@ -399,6 +422,7 @@ mod tests {
 
     #[test]
     fn scalar_out_of_range_rejected() {
+        // 5 is outside the declared [0,1] scale.
         let out = validate_annotation(&ann_with(Body::ScalarRating {
             value: 5.0,
             worst: 0.0,
@@ -406,6 +430,48 @@ mod tests {
         }))
         .unwrap();
         assert!(!out.conforms);
+    }
+
+    #[test]
+    fn custom_scalar_scale_conforms() {
+        // A custom scale (0..10) with an in-range value is valid.
+        let out = validate_annotation(&ann_with(Body::ScalarRating {
+            value: 7.0,
+            worst: 0.0,
+            best: 10.0,
+        }))
+        .unwrap();
+        assert!(
+            out.conforms,
+            "custom scale should conform: {:?}",
+            out.violations
+        );
+    }
+
+    #[test]
+    fn custom_scalar_above_best_rejected() {
+        // Above the body's own bestRating → rejected.
+        let out = validate_annotation(&ann_with(Body::ScalarRating {
+            value: 11.0,
+            worst: 0.0,
+            best: 10.0,
+        }))
+        .unwrap();
+        assert!(!out.conforms);
+        assert!(out.violations.iter().any(|m| m.contains("bestRating")));
+    }
+
+    #[test]
+    fn custom_scalar_below_worst_rejected() {
+        // Below the body's own worstRating → rejected.
+        let out = validate_annotation(&ann_with(Body::ScalarRating {
+            value: -1.0,
+            worst: 0.0,
+            best: 10.0,
+        }))
+        .unwrap();
+        assert!(!out.conforms);
+        assert!(out.violations.iter().any(|m| m.contains("worstRating")));
     }
 
     #[test]
