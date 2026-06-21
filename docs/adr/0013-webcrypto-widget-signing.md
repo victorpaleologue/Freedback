@@ -79,6 +79,51 @@ If either canonicalizer changes, one of these tests fails.
   both languages.
 - Scalar and tag feedback now have first-class widgets.
 - Limits: `data-sign` needs a secure context (so `crypto.subtle` exists);
-  per-device key with no recovery/rotation UI yet; the `jcs()` string escaping is
-  validated for the ASCII-dominant data feedback carries (URLs, ISO dates, tag
-  text) — exotic-Unicode equivalence with Rust is not separately fuzzed.
+  the `jcs()` string escaping is validated for the ASCII-dominant data feedback
+  carries (URLs, ISO dates, tag text) — exotic-Unicode equivalence with Rust is
+  not separately fuzzed. Key export/import/rotation is addressed in the follow-up
+  below (issue #27).
+
+## Follow-up — identity export / rotation / recovery (issue #27)
+
+The original decision persisted a **non-extractable** private key: safe, but
+unrecoverable. If IndexedDB is cleared the issuer id is lost, and there was no
+way to carry one identity across devices/browsers. Since the issuer id IS the
+portable, federating identity (INVARIANT 4a), losing it silently re-pseudonymizes
+the user. This follow-up adds backup, transfer, rotation, and recovery.
+
+**Extractable trade-off.** A non-extractable key cannot be exported, full stop.
+So the signing key is now generated **`extractable: true`**. The cost: page JS
+(and thus a successful XSS) can read the private JWK. We judged this acceptable
+because (a) the key signs *public* feedback — there is no confidential authority
+to steal, only the ability to impersonate the issuer until rotation, and (b) the
+alternative (no backup) guarantees identity loss for ordinary users clearing
+site data. The raw JWK still never leaves the page **unencrypted**: export is
+gated behind a user password.
+
+**Password-encrypted backup.** `exportIdentity(password)` wraps the private JWK
+with the standard WebCrypto recipe — **PBKDF2-SHA-256 (210k iters) → AES-GCM-256**
+— producing a self-describing JSON blob (`type:"freedback-identity"`, base64url
+salt/iv/ciphertext + public SPKI). It carries no plaintext key material.
+`importIdentity(blob, password)` derives the same wrap key, decrypts (a wrong
+password fails closed on the AES-GCM tag), re-imports the key, and **restores the
+exact same issuer id**. The blob survives copy/paste and file download.
+
+**Rotation.** `rotateIdentity()` generates a fresh key, makes it the active
+identity, and returns a `link` statement that the **new** key signs over the
+**old** issuer id + old PEM. This keeps history attributable (the new key vouches
+"I am also the old issuer") without a CA. Crucially, past self-signed annotations
+under the old key **remain valid** — signatures are detached and verify against
+the embedded `kid` independently of which key is currently active. The link can
+be published as an annotation or kept locally.
+
+**Recovery.** When IndexedDB is cleared, the widget transparently mints a new
+identity (as before), but `demo.html` now surfaces clear messaging and a
+**Restore (import)** path so a user with a backup recovers their original issuer
+id rather than silently forking into a new one.
+
+**Tests.** `widgets/test.cjs` exercises the pure helpers under Node's WebCrypto:
+the password wrap→unwrap round-trip restores the issuer id (and the blob leaks no
+private `d`), a wrong password is rejected, the restored key still produces a
+verifying signature, and rotation yields a *new* issuer id with a link the new
+key signs while a pre-rotation signature still verifies.

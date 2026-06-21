@@ -10,10 +10,12 @@
  *
  * A widget with only `data-read` renders a read-only aggregate (no auth).
  * `data-publish` enables submitting. Two auth paths:
- *   - `data-sign`  → the page holds a non-extractable P-256 key (WebCrypto,
+ *   - `data-sign`  → the page holds an extractable P-256 key (WebCrypto,
  *     persisted in IndexedDB); each annotation carries a detached ES256
  *     signature over its RFC 8785 canonical bytes — the *federating* identity
- *     (INVARIANT 4a). The private key never leaves the page.
+ *     (INVARIANT 4a). The key is extractable only so the user can explicitly
+ *     password-encrypt and back it up / move devices (export/import/rotate,
+ *     issue #27); it otherwise never leaves the page unencrypted.
  *   - `data-token` → an OAuth bearer (the siloed, non-federating identity).
  * `data-sign` wins when both are present.
  *
@@ -125,9 +127,12 @@
     return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----\n`;
   }
 
-  // Persist the keypair in IndexedDB: a *non-extractable* private CryptoKey plus
+  // Persist the keypair in IndexedDB: an *extractable* private CryptoKey plus
   // the public SPKI DER bytes (for the kid / issuer id). Structured clone stores
-  // CryptoKeys without exposing private material.
+  // CryptoKeys without exposing private material to page JS, but extractable:true
+  // is required so the user can explicitly password-wrap and export the identity
+  // for backup / moving across devices (issue #27, ADR 0013 follow-up). The raw
+  // JWK only ever leaves the page encrypted under a user-supplied password.
   const DB_NAME = "freedback";
   const STORE = "identity";
   function openDb() {
@@ -166,21 +171,168 @@
     const db = await openDb();
     let rec = await idbGet(db, "kp");
     if (!rec) {
-      // Generate extractable, re-import the private key as non-extractable, keep
-      // only that + the public DER. The extractable copy is discarded.
-      const tmp = await sc.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-      const jwk = await sc.exportKey("jwk", tmp.privateKey);
-      const priv = await sc.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
-      const spki = await sc.exportKey("spki", tmp.publicKey);
-      rec = { priv, spki };
+      rec = await generateKeyRecord(sc);
       await idbPut(db, "kp", rec);
     }
+    return identityFromRecord(sc, rec);
+  }
+
+  /** Generate a fresh extractable P-256 signing key record (private CryptoKey +
+   *  public SPKI DER). Extractable so the user can back it up (issue #27). */
+  async function generateKeyRecord(sc) {
+    const kp = await sc.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const spki = await sc.exportKey("spki", kp.publicKey);
+    return { priv: kp.privateKey, spki };
+  }
+
+  /** Derive the public identity (issuer id + kid PEM) from a stored record. */
+  async function identityFromRecord(sc, rec) {
     const digest = await sc.digest("SHA-256", rec.spki);
     return {
       priv: rec.priv,
       issuerId: "urn:freedback:key:" + hex(new Uint8Array(digest)),
       kid: pemFromDer(rec.spki),
     };
+  }
+
+  // --- password-encrypted export / import (issue #27) ----------------------
+  // The portable, federating issuer id IS the public key (INVARIANT 4a). To back
+  // it up or carry it to another browser/device we wrap the private JWK with a
+  // key derived from a user password (PBKDF2-SHA-256 → AES-GCM, the standard
+  // WebCrypto recipe). The exported blob is plain JSON (base64url fields) so it
+  // survives copy/paste and file download; it carries no plaintext key material.
+  const KDF_ITERS = 210000; // OWASP 2023 PBKDF2-SHA256 floor
+  const WRAP_VERSION = 1;
+
+  function rand(n) {
+    const a = new Uint8Array(n);
+    crypto.getRandomValues(a);
+    return a;
+  }
+  function fromB64url(s) {
+    const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
+    const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  /** Derive an AES-GCM key from a password + salt via PBKDF2-SHA-256. */
+  async function deriveWrapKey(sc, password, salt, iterations) {
+    const base = await sc.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+    return sc.deriveKey(
+      { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+      base,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  /** Encrypt a private CryptoKey (+ its public SPKI DER) under `password`.
+   *  Returns a self-describing JSON blob (no plaintext key material). */
+  async function wrapIdentity(sc, rec, password) {
+    if (!password) throw new Error("a password is required to export the identity");
+    const jwk = await sc.exportKey("jwk", rec.priv);
+    const salt = rand(16);
+    const iv = rand(12);
+    const key = await deriveWrapKey(sc, password, salt, KDF_ITERS);
+    const plaintext = new TextEncoder().encode(JSON.stringify(jwk));
+    const ct = await sc.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+    return {
+      v: WRAP_VERSION,
+      type: "freedback-identity",
+      alg: "ES256",
+      kdf: { name: "PBKDF2", hash: "SHA-256", iterations: KDF_ITERS, salt: b64url(salt) },
+      enc: { name: "AES-GCM", iv: b64url(iv) },
+      spki: b64url(rec.spki),
+      ciphertext: b64url(ct),
+    };
+  }
+
+  /** Decrypt a blob produced by `wrapIdentity` back into a key record
+   *  (`{priv, spki}`). Throws on a wrong password (AES-GCM tag mismatch). */
+  async function unwrapIdentity(sc, blob, password) {
+    if (!blob || blob.type !== "freedback-identity") throw new Error("not a Freedback identity backup");
+    if (blob.v !== WRAP_VERSION) throw new Error(`unsupported backup version ${blob.v}`);
+    const salt = fromB64url(blob.kdf.salt);
+    const iv = fromB64url(blob.enc.iv);
+    const iterations = blob.kdf.iterations || KDF_ITERS;
+    const key = await deriveWrapKey(sc, password, salt, iterations);
+    let plaintext;
+    try {
+      plaintext = await sc.decrypt({ name: "AES-GCM", iv }, key, fromB64url(blob.ciphertext));
+    } catch (_e) {
+      throw new Error("wrong password or corrupt backup");
+    }
+    const jwk = JSON.parse(new TextDecoder().decode(plaintext));
+    const priv = await sc.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
+    return { priv, spki: fromB64url(blob.spki).buffer };
+  }
+
+  /** Export the current IndexedDB identity as a password-encrypted backup blob. */
+  async function exportIdentity(password) {
+    const sc = subtle();
+    if (!sc) throw new Error("WebCrypto unavailable (needs a secure context)");
+    const db = await openDb();
+    const rec = await idbGet(db, "kp");
+    if (!rec) throw new Error("no identity to export yet");
+    return wrapIdentity(sc, rec, password);
+  }
+
+  /** Import a password-encrypted backup, replacing the IndexedDB identity and
+   *  restoring the same issuer id. Resets the cached identity promise. */
+  async function importIdentity(blob, password) {
+    const sc = subtle();
+    if (!sc) throw new Error("WebCrypto unavailable (needs a secure context)");
+    const rec = await unwrapIdentity(sc, blob, password);
+    const db = await openDb();
+    await idbPut(db, "kp", rec);
+    identityPromise = null;
+    return identityFromRecord(sc, rec);
+  }
+
+  // --- rotation (issue #27) ------------------------------------------------
+  // Generate a fresh signing key and replace the active identity, while keeping
+  // history attributable: the *new* key signs a small statement carrying the old
+  // issuer id + old public PEM. Past self-signed annotations under the old key
+  // stay valid — signatures are detached and verify independently of which key
+  // is currently active. The returned link statement can be published as an
+  // `oa:linking` annotation (or kept) to vouch that both keys are the same actor.
+  async function buildRotationLink(sc, oldIdent, newRec) {
+    const newIdent = await identityFromRecord(sc, newRec);
+    const statement = {
+      type: "freedback-key-rotation",
+      newIssuer: newIdent.issuerId,
+      oldIssuer: oldIdent.issuerId,
+      oldKid: oldIdent.kid,
+      created: new Date().toISOString(),
+    };
+    // The new key signs the canonical statement, vouching for the old issuer id.
+    const bytes = new TextEncoder().encode(jcs(statement));
+    const raw = await sc.sign({ name: "ECDSA", hash: "SHA-256" }, newRec.priv, bytes);
+    return {
+      statement,
+      signature: { alg: "ES256", kid: newIdent.kid, sig: b64url(raw) },
+    };
+  }
+
+  /** Rotate to a new signing key. Persists the new key as the active identity
+   *  and returns `{ identity, previous, link }` where `link` is a statement
+   *  signed by the new key that cross-references the old issuer id so history
+   *  stays attributable. Past annotations under `previous` remain valid. */
+  async function rotateIdentity() {
+    const sc = subtle();
+    if (!sc) throw new Error("WebCrypto unavailable (needs a secure context)");
+    const db = await openDb();
+    const oldRec = await idbGet(db, "kp");
+    const oldIdent = oldRec ? await identityFromRecord(sc, oldRec) : null;
+    const newRec = await generateKeyRecord(sc);
+    const link = oldIdent ? await buildRotationLink(sc, oldIdent, newRec) : null;
+    await idbPut(db, "kp", newRec);
+    identityPromise = null;
+    const newIdent = await identityFromRecord(sc, newRec);
+    return { identity: newIdent, previous: oldIdent, link };
   }
 
   /** Build a self-signed annotation (detached ES256 over the JCS bytes).
@@ -446,6 +598,28 @@
       textBody,
       buildSignedAnnotation,
       getIdentity,
+      // identity management (issue #27). The *Record helpers take an explicit
+      // SubtleCrypto so they unit-test in Node without IndexedDB; the IndexedDB-
+      // backed export/import/rotate wrappers run in the browser.
+      generateKeyRecord,
+      identityFromRecord,
+      wrapIdentity,
+      unwrapIdentity,
+      buildRotationLink,
+      exportIdentity,
+      importIdentity,
+      rotateIdentity,
     };
+  }
+
+  // Expose the browser-facing identity-management API on a global so pages
+  // (e.g. demo.html) can offer export/import/rotate without a build step.
+  if (typeof window !== "undefined") {
+    window.Freedback = Object.assign(window.Freedback || {}, {
+      getIdentity,
+      exportIdentity,
+      importIdentity,
+      rotateIdentity,
+    });
   }
 })();

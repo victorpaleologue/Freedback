@@ -136,9 +136,14 @@ annotations.
   detached ES256 signature over the RFC 8785 JCS bytes, byte-matched to the Rust
   canonicalizer and cross-checked end-to-end by
   `protocol-lib/tests/widget_interop.rs` (a browser-signed fixture verified in
-  Rust). `<freedback-scalar>` and `<freedback-tag>` shipped. Remaining: wasm
-  `protocol-lib` glue (the JS path needs no wasm) and key recovery/rotation UI.
-  Publish
+  Rust). `<freedback-scalar>` and `<freedback-tag>` shipped. **Identity
+  export/import/rotation/recovery** now ships too (#27, ADR 0013 follow-up): the
+  signing key is `extractable` so it can be password-wrapped
+  (PBKDF2→AES-GCM) for backup and cross-device transfer, restoring the same
+  issuer id; `rotateIdentity()` mints a new key with a cross-signed link to the
+  old id while past self-signed annotations stay valid; `demo.html` exposes
+  export/import/rotate buttons and IndexedDB-cleared recovery messaging.
+  Remaining: wasm `protocol-lib` glue (the JS path needs no wasm). Publish
   under **`@freedback/widgets`** (the bare npm name is taken — `docs/naming.md`).
 
 ### M9 — equivalence-detection prompt ✅ [#component-8]
