@@ -8,17 +8,30 @@ name: Release
 #   * the browser `wasm32-unknown-unknown` build of the protocol core + cli-client.
 # Both are attached to the GitHub Release for the tag, with SHA-256 sums.
 #
-# Push a semver tag to cut a release:  git tag v0.1.0 && git push origin v0.1.0
+# Cut a release one of two ways:
+#   * push a semver tag:            git tag v1.0.0 && git push origin v1.0.0
+#   * run this workflow manually with a `tag` input (Actions → Release → Run
+#     workflow → tag = v1.0.0). The tag is created server-side at the current
+#     commit by the publish step, so it works even where pushing tags is blocked.
+# Manual dispatch WITHOUT a `tag` just builds the artifacts (smoke test, no Release).
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch: # build the artifacts on demand (no Release is published)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create + publish (e.g. v1.0.0). Leave empty to only build (smoke test)."
+        required: false
+        type: string
 
 permissions:
-  contents: write # create the Release and upload assets
+  contents: write # create the Release, the tag, and upload assets
 
 env:
   CARGO_TERM_COLOR: always
+  # The release tag: the pushed tag, or the manual `tag` input. On a tag-less
+  # smoke-test dispatch this is the branch name and publish is skipped.
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   # --- static Linux binaries (musl) ----------------------------------------
@@ -54,7 +67,7 @@ jobs:
         run: |
           mkdir -p dist
           out="target/x86_64-unknown-linux-musl/release"
-          name="freedback-${GITHUB_REF_NAME}-x86_64-linux-musl"
+          name="freedback-${TAG}-x86_64-linux-musl"
           tar -C "$out" -czf "dist/${name}.tar.gz" \
             freedback-feedback-server \
             freedback-discovery-server \
@@ -97,7 +110,7 @@ jobs:
         run: |
           mkdir -p dist
           out="target/wasm32-unknown-unknown/release"
-          name="freedback-wasm-${GITHUB_REF_NAME}"
+          name="freedback-wasm-${TAG}"
           # The two wasm modules plus the served ontology, so a browser consumer
           # has the wasm + the pinned @context/shapes in one bundle.
           tar -czf "dist/${name}.tar.gz" \
@@ -115,8 +128,11 @@ jobs:
     name: publish release
     needs: [musl-binaries, wasm-package]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Publish on a pushed tag, or a manual dispatch whose `tag` input is a vN
+    # version. A tag-less smoke-test dispatch (TAG = branch name) is skipped.
+    if: ${{ startsWith(inputs.tag || github.ref_name, 'v') }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -129,6 +145,9 @@ jobs:
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
+          # On manual dispatch the tag may not exist yet — create it at this commit.
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           files: release/*
           generate_release_notes: true
           fail_on_unmatched_files: true
