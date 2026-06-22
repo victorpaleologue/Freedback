@@ -73,6 +73,8 @@ let id = dedup_id(&ann)?; // stable across servers and re-POSTs
 ## Documentation
 
 - [Architecture overview](docs/architecture.md)
+- [Using the widgets in React](docs/widgets-react.md) — tutorial + API review
+- [Deployment](docs/deployment.md)
 - [Design decisions (ADRs)](docs/adr/)
 - [Roadmap & issue map](docs/roadmap.md)
 - [Agent invariants](CLAUDE.md) — the rules every contributor works under
