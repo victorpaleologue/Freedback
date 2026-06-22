@@ -63,6 +63,11 @@ jobs:
           # the apex DNS points at the Pages IPs (see docs/deployment.md).
           echo 'freedback.net' > _site/CNAME
       - uses: actions/configure-pages@v5
+        # Turn Pages on (build type = GitHub Actions) if it isn't already, so the
+        # first deploy doesn't fail with "Pages site not found". Needs the
+        # workflow's `pages: write` permission (set above).
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
