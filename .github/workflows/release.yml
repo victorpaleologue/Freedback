@@ -61,8 +61,8 @@ jobs:
             -p freedback-feedback-server \
             -p freedback-discovery-server \
             -p freedback-collection-server \
-            -p freedback-cli-client --bin freedback \
-            -p freedback-advanced-client --bin freedback-sync
+            -p freedback-cli-client \
+            -p freedback-advanced-client
       - name: Package
         run: |
           mkdir -p dist
