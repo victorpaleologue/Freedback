@@ -53,6 +53,35 @@ jobs:
       - name: build cli-client lib (wasm)
         run: cargo build -p freedback-cli-client --no-default-features --features wasm --target wasm32-unknown-unknown --lib
 
+  # musl: the static-binary target the release pipeline ships (issue #11). Keeps
+  # the `x86_64-unknown-linux-musl` build green so a tag never fails to cut.
+  musl:
+    name: x86_64-linux-musl (static build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable + musl target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: musl
+      - name: Install zig + cargo-zigbuild
+        run: pip3 install ziglang
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - name: Build all server + client binaries (static musl)
+        run: |
+          cargo zigbuild --target x86_64-unknown-linux-musl \
+            -p freedback-feedback-server \
+            -p freedback-discovery-server \
+            -p freedback-collection-server \
+            -p freedback-cli-client --bin freedback \
+            -p freedback-advanced-client --bin freedback-sync
+
   # Widgets / extension: the JS must parse and the pure helpers must pass.
   widgets:
     name: widgets (js)

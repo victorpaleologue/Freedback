@@ -31,6 +31,19 @@ impl OxigraphStore {
         })
     }
 
+    /// Open a **durable** on-disk Oxigraph store backed by RocksDB at `path`,
+    /// creating it if absent. Annotations survive process restarts with no
+    /// snapshot loop (the `FREEDBACK_STORE_PATH` JSON-Lines mechanism is for the
+    /// in-memory build; this is the production durable backend).
+    ///
+    /// Requires the `rocksdb` feature (native only — pulls a C/C++ build).
+    #[cfg(feature = "rocksdb")]
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        Ok(Self {
+            store: Store::open(path).map_err(be)?,
+        })
+    }
+
     fn subject(dedup_id: &str) -> Result<NamedNode> {
         NamedNode::new(format!("urn:freedback:ann:{dedup_id}")).map_err(be)
     }
@@ -180,5 +193,42 @@ mod tests {
             path.to_str().unwrap(),
         )
         .await;
+    }
+
+    // The durable RocksDB backend must satisfy the same contract as the
+    // in-memory one, and — unlike it — survive a full reopen of the database.
+    #[cfg(feature = "rocksdb")]
+    #[tokio::test]
+    async fn rocksdb_store_conformance() {
+        let dir = tempfile::tempdir().unwrap();
+        conformance::run(&OxigraphStore::open(dir.path()).unwrap()).await;
+    }
+
+    #[cfg(feature = "rocksdb")]
+    #[tokio::test]
+    async fn rocksdb_store_survives_reopen() {
+        use freedback_protocol::{Annotation, Body, Creator, Motivation, Target};
+        let dir = tempfile::tempdir().unwrap();
+        let ann = Annotation::new(
+            Motivation::Assessing,
+            Target::Iri("https://example.com/item/1".into()),
+            vec![Body::star(4.0)],
+        )
+        .with_creator(Creator::new("did:key:issuer-one"))
+        .with_created("1970-01-01T00:01:40Z");
+
+        // Write, then close the database (drop the store → release the RocksDB lock).
+        {
+            let store = OxigraphStore::open(dir.path()).unwrap();
+            store.put(&ann).await.unwrap();
+        }
+
+        // Reopen the same directory — the write must still be there.
+        let store = OxigraphStore::open(dir.path()).unwrap();
+        let page = store.query(&Query::default()).await.unwrap();
+        assert_eq!(
+            page.total, 1,
+            "the RocksDB backend must persist writes across a reopen"
+        );
     }
 }

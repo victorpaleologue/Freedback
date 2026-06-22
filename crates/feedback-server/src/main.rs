@@ -4,7 +4,11 @@
 //! - `FREEDBACK_BIND`       (default `127.0.0.1:8080`)
 //! - `FREEDBACK_BASE_URL`   (default `http://<bind>`)
 //! - `FREEDBACK_STORE_PATH` (optional JSON-Lines snapshot file: loaded on boot,
-//!   re-snapshotted every 60s and on graceful shutdown — durable demo storage)
+//!   re-snapshotted every 60s and on graceful shutdown — durable demo storage
+//!   for the in-memory backend)
+//! - `FREEDBACK_ROCKSDB_PATH` (optional, **requires the `rocksdb` feature**: a
+//!   durable on-disk Oxigraph/RocksDB store directory. When set, writes persist
+//!   directly and the JSON-Lines snapshot loop is skipped.)
 //! - `FREEDBACK_OAUTH_TOKEN` + `FREEDBACK_OAUTH_APP` + `FREEDBACK_OAUTH_USER`
 //!   (optional single demo bearer token → app-scoped identity)
 
@@ -27,14 +31,21 @@ async fn main() -> anyhow::Result<()> {
     let bind = std::env::var("FREEDBACK_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let base_url = std::env::var("FREEDBACK_BASE_URL").unwrap_or_else(|_| format!("http://{bind}"));
     let store_path = std::env::var("FREEDBACK_STORE_PATH").ok();
+    let rocksdb_path = std::env::var("FREEDBACK_ROCKSDB_PATH").ok();
 
-    let store: Arc<dyn FeedbackStore> = Arc::new(OxigraphStore::new()?);
+    // Pick the backend. A durable RocksDB store (when built with the feature and
+    // given a path) persists writes directly; otherwise the in-memory store with
+    // the optional JSON-Lines snapshot.
+    let (store, durable) = build_store(&rocksdb_path)?;
 
-    // Durable demo storage: load the snapshot on boot (see ADR 0008).
-    if let Some(path) = &store_path {
-        match store.load_jsonl(path).await {
-            Ok(n) => tracing::info!("loaded {n} annotations from {path}"),
-            Err(e) => tracing::warn!("could not load snapshot {path}: {e}"),
+    // JSON-Lines snapshots apply only to the in-memory backend (ADR 0008); a
+    // durable RocksDB store already persists every write.
+    if !durable {
+        if let Some(path) = &store_path {
+            match store.load_jsonl(path).await {
+                Ok(n) => tracing::info!("loaded {n} annotations from {path}"),
+                Err(e) => tracing::warn!("could not load snapshot {path}: {e}"),
+            }
         }
     }
 
@@ -65,17 +76,19 @@ async fn main() -> anyhow::Result<()> {
         state = state.with_oauth(tokens);
     }
 
-    // Periodic snapshots while running.
-    if let Some(path) = store_path.clone() {
-        let s = store.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(60)).await;
-                if let Err(e) = s.dump_jsonl(&path).await {
-                    tracing::warn!("periodic snapshot failed: {e}");
+    // Periodic snapshots while running (in-memory backend only).
+    if !durable {
+        if let Some(path) = store_path.clone() {
+            let s = store.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    if let Err(e) = s.dump_jsonl(&path).await {
+                        tracing::warn!("periodic snapshot failed: {e}");
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     let app = build_app(state);
@@ -85,14 +98,36 @@ async fn main() -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    // Final snapshot on shutdown.
-    if let Some(path) = &store_path {
-        match store.dump_jsonl(path).await {
-            Ok(n) => tracing::info!("snapshotted {n} annotations to {path} on shutdown"),
-            Err(e) => tracing::warn!("shutdown snapshot failed: {e}"),
+    // Final snapshot on shutdown (in-memory backend only).
+    if !durable {
+        if let Some(path) = &store_path {
+            match store.dump_jsonl(path).await {
+                Ok(n) => tracing::info!("snapshotted {n} annotations to {path} on shutdown"),
+                Err(e) => tracing::warn!("shutdown snapshot failed: {e}"),
+            }
         }
     }
     Ok(())
+}
+
+/// Build the feedback store, returning `(store, durable)`. `durable == true`
+/// only for the on-disk RocksDB backend, which makes the JSON-Lines snapshot
+/// path moot. Selecting RocksDB needs both the `rocksdb` feature at build time
+/// and `FREEDBACK_ROCKSDB_PATH` at run time.
+fn build_store(rocksdb_path: &Option<String>) -> anyhow::Result<(Arc<dyn FeedbackStore>, bool)> {
+    #[cfg(feature = "rocksdb")]
+    if let Some(path) = rocksdb_path {
+        tracing::info!("durable RocksDB store at {path}");
+        return Ok((Arc::new(OxigraphStore::open(path)?), true));
+    }
+    #[cfg(not(feature = "rocksdb"))]
+    if rocksdb_path.is_some() {
+        tracing::warn!(
+            "FREEDBACK_ROCKSDB_PATH is set but this build lacks the `rocksdb` feature; \
+             using the in-memory store (rebuild with --features rocksdb for durability)"
+        );
+    }
+    Ok((Arc::new(OxigraphStore::new()?), false))
 }
 
 /// A truthy env flag: set and not one of `0`/`false`/`no`/`off`/empty.

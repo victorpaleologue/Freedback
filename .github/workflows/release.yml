@@ -1,0 +1,134 @@
+name: Release
+
+# Tagged releases publish redistributable artifacts (issue #11):
+#   * static, dependency-free `x86_64-unknown-linux-musl` binaries for all five
+#     executables, built with cargo-zigbuild (zig as the C cross-compiler — `ring`
+#     pulls C even though every backend here is pure-Rust rustls + in-memory
+#     Oxigraph, so no OpenSSL/RocksDB/Clang is needed);
+#   * the browser `wasm32-unknown-unknown` build of the protocol core + cli-client.
+# Both are attached to the GitHub Release for the tag, with SHA-256 sums.
+#
+# Push a semver tag to cut a release:  git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # build the artifacts on demand (no Release is published)
+
+permissions:
+  contents: write # create the Release and upload assets
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # --- static Linux binaries (musl) ----------------------------------------
+  musl-binaries:
+    name: static binaries (x86_64-linux-musl)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust + musl target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: musl
+      # zig is the C cross-compiler cargo-zigbuild drives; the pip package is the
+      # simplest reproducible source and cargo-zigbuild auto-detects it.
+      - name: Install zig + cargo-zigbuild
+        run: pip3 install ziglang
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - name: Build static binaries (in-memory backend; no Clang/RocksDB)
+        run: |
+          cargo zigbuild --release --target x86_64-unknown-linux-musl \
+            -p freedback-feedback-server \
+            -p freedback-discovery-server \
+            -p freedback-collection-server \
+            -p freedback-cli-client --bin freedback \
+            -p freedback-advanced-client --bin freedback-sync
+      - name: Package
+        run: |
+          mkdir -p dist
+          out="target/x86_64-unknown-linux-musl/release"
+          name="freedback-${GITHUB_REF_NAME}-x86_64-linux-musl"
+          tar -C "$out" -czf "dist/${name}.tar.gz" \
+            freedback-feedback-server \
+            freedback-discovery-server \
+            freedback-collection-server \
+            freedback \
+            freedback-sync
+          (cd dist && sha256sum *.tar.gz > "${name}.sha256")
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: musl-binaries
+          path: dist/
+
+  # --- browser wasm package ------------------------------------------------
+  wasm-package:
+    name: wasm package (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust + wasm target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm-release
+      # `cargo rustc --crate-type cdylib` emits an actual `.wasm` (the lib crates
+      # are rlib by default — `cargo build` only type-checks them for wasm). This
+      # keeps Cargo.toml unchanged while producing a real artifact.
+      - name: Build wasm (protocol-lib core + cli-client lib)
+        run: |
+          cargo rustc --release -p freedback-protocol \
+            --no-default-features --features wasm \
+            --target wasm32-unknown-unknown --lib --crate-type cdylib
+          cargo rustc --release -p freedback-cli-client \
+            --no-default-features --features wasm \
+            --target wasm32-unknown-unknown --lib --crate-type cdylib
+      - name: Package
+        run: |
+          mkdir -p dist
+          out="target/wasm32-unknown-unknown/release"
+          name="freedback-wasm-${GITHUB_REF_NAME}"
+          # The two wasm modules plus the served ontology, so a browser consumer
+          # has the wasm + the pinned @context/shapes in one bundle.
+          tar -czf "dist/${name}.tar.gz" \
+            -C "$out" freedback_protocol.wasm freedback_cli_client.wasm \
+            -C "$GITHUB_WORKSPACE" ontology
+          (cd dist && sha256sum *.tar.gz > "${name}.sha256")
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm-package
+          path: dist/
+
+  # --- publish the GitHub Release ------------------------------------------
+  publish:
+    name: publish release
+    needs: [musl-binaries, wasm-package]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.sha256' \) \
+            -exec cp {} release/ \;
+          ls -l release
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

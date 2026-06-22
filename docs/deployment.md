@@ -37,6 +37,8 @@ docker run -p 8080:8080 -e FREEDBACK_BASE_URL=https://feedback.example.org \
 | `FREEDBACK_BIND` | `0.0.0.0:8080` (image) | all servers |
 | `FREEDBACK_BASE_URL` | `http://<bind>` | all servers (mints ids / links) |
 | `FREEDBACK_SERVERS` | — | collection (comma-separated upstreams) |
+| `FREEDBACK_STORE_PATH` | — | feedback (JSON-Lines snapshot file; in-memory backend) |
+| `FREEDBACK_ROCKSDB_PATH` | — | feedback (durable RocksDB dir; needs the `rocksdb` build) |
 | `FREEDBACK_OAUTH_TOKEN` / `_APP` / `_USER` | — | feedback (one demo bearer token) |
 
 ## Storage
@@ -54,9 +56,47 @@ This is snapshot — **not transactional** — persistence (ADR 0008): a crash
 between snapshots can lose up to ~60 s of writes. Leave `FREEDBACK_STORE_PATH`
 unset for the old ephemeral behavior.
 
-A fully transactional backend (RocksDB feature / WAL) and the static-binary
-`x86_64-unknown-linux-musl` target (via `cargo-zigbuild`) remain future work;
-the current image is glibc/`debian-slim`.
+**Durable RocksDB backend (`rocksdb` feature).** For real transactional
+persistence, build the feedback server with the on-disk Oxigraph/RocksDB backend
+and point it at a directory:
+
+```bash
+# Native:
+cargo run -p freedback-feedback-server --features rocksdb
+#   with FREEDBACK_ROCKSDB_PATH=/var/lib/freedback/db
+
+# Docker (durable image — the rust image has the C/C++ toolchain RocksDB needs):
+docker build --build-arg FEEDBACK_FEATURES=rocksdb -t freedback:durable .
+docker run -p 8080:8080 -v freedback-db:/data \
+  -e FREEDBACK_ROCKSDB_PATH=/data/db freedback:durable freedback-feedback-server
+```
+
+When `FREEDBACK_ROCKSDB_PATH` is set on a `rocksdb` build, every write is
+persisted directly (no snapshot loop) and survives a hard restart. On a build
+without the feature the variable is ignored (with a warning) and the in-memory +
+snapshot path is used. RocksDB needs Clang/LLVM (or g++) at build time, which is
+why it is opt-in rather than the default demo image.
+
+## Releases
+
+`.github/workflows/release.yml` cuts artifacts on a semver tag:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+It attaches to the GitHub Release for the tag:
+
+- **`freedback-<tag>-x86_64-linux-musl.tar.gz`** — fully static
+  `x86_64-unknown-linux-musl` binaries (all five executables: the three servers,
+  the `freedback` CLI, and `freedback-sync`), built with **`cargo-zigbuild`**
+  (zig as the C cross-compiler for `ring`). No glibc, no OpenSSL (rustls), no
+  RocksDB — runs on any x86-64 Linux.
+- **`freedback-wasm-<tag>.tar.gz`** — the `wasm32-unknown-unknown` build of the
+  protocol core + cli-client, bundled with the pinned ontology.
+
+Each archive ships a `.sha256`. `workflow_dispatch` builds the artifacts without
+publishing a Release (smoke test).
 
 ## TLS
 
@@ -78,7 +118,11 @@ unrelated, dormant npm homonym).
 
 ## CI validation
 
-- `ci.yml` — fmt, clippy, native tests, wasm32 builds, ontology parse checks.
+- `ci.yml` — fmt, clippy, native tests, wasm32 builds, the
+  `x86_64-unknown-linux-musl` static build, widgets unit + headless E2E, and
+  ontology parse checks.
 - `container.yml` — builds this image (on deploy-config / lockfile changes or on
   demand), so the Dockerfile can't silently rot.
 - `pages.yml` — publishes the static artifacts from `main`.
+- `release.yml` — on a `v*` tag, publishes the musl binaries + wasm package to
+  the GitHub Release.
