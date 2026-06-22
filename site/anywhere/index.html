@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback — annotate anything</title>
+  <meta name="description" content="Attach Freedback feedback to a law, a Wikipedia article, an arbitrary web page — resources that host no feedback UI of their own." />
+  <!-- The mock MUST load first: it installs the fetch interceptor before any
+       widget calls fetch(). Then the canonical shipped widgets. -->
+  <script src="/anywhere/mock.js"></script>
+  <script src="/widgets/freedback-widgets.js"></script>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 16px/1.6 system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1.1rem; color: #1a1a1a; }
+    code { background: #f3f3f3; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; word-break: break-all; }
+    a { color: #0857c3; }
+    h1 { margin-bottom: 0; font-size: 2.1rem; }
+    .sub { color: #555; margin-top: 0.3rem; font-size: 1.1rem; }
+    .banner { margin: 1.2rem 0; padding: 0.7rem 1rem; border-radius: 8px;
+              background: #fff7e6; border: 1px solid #f0d28a; color: #6b4e00; font-size: 0.95rem; }
+    .card { margin: 1.4rem 0; padding: 1rem 1.1rem; border: 1px solid #e3e3e3; border-radius: 10px; }
+    .card h3 { margin: 0 0 0.2rem; }
+    .card .uri { font-size: 0.85rem; color: #555; margin: 0 0 0.6rem; word-break: break-all; }
+    .card .blurb { margin: 0.3rem 0 0.9rem; font-size: 0.96rem; }
+    .widgets { display: flex; flex-direction: column; gap: 0.7rem; }
+    .nav { margin-top: 2.4rem; }
+    footer { margin-top: 2.5rem; color: #555; font-size: 0.92rem; }
+    .fb-chip { display: inline-block; margin: 0 0.25rem 0.25rem 0; padding: 0.1em 0.5em;
+               background: #eef2f9; border-radius: 999px; font-size: 0.85em; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e8e8e8; background: #15171a; }
+      code { background: #25282c; }
+      a { color: #6ea8fe; }
+      .banner { background: #2a2410; border-color: #5c4d12; color: #e8d48a; }
+      .card { border-color: #2c3036; }
+      .card .uri, .sub, footer { color: #9aa0a6; }
+      .fb-chip { background: #21262d; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Annotate anything</h1>
+  <p class="sub">Freedback feedback targets are just URIs. Here it attaches
+  stars, thumbs, comments and tags to real external resources that host no
+  feedback UI of their own — and that this project does not control.</p>
+
+  <div class="banner">
+    <strong>Demo mode.</strong> There is no live Freedback server here. All reads
+    and writes are simulated in your browser by <code>/anywhere/mock.js</code> —
+    nothing is sent to the target sites or anywhere else.
+  </div>
+
+  <p>The point: the target site is never involved. Feedback lives on a Freedback
+  server keyed by the target URI, and anyone pointing a widget at the same URI
+  sees the same aggregate. The three resources below have no idea this page
+  exists.</p>
+
+  <!-- 1. A law: GDPR via its ELI URI -->
+  <div class="card">
+    <h3>A law — GDPR (Regulation (EU) 2016/679)</h3>
+    <p class="uri"><code>http://data.europa.eu/eli/reg/2016/679/oj</code></p>
+    <p class="blurb">The EU publishes the GDPR at a stable ELI (European
+    Legislation Identifier) URI. There is no comment box on
+    eur-lex.europa.eu — yet we can still rate how clear the regulation is and
+    leave comments against that exact identifier. The legislation site is never
+    contacted.</p>
+    <div class="widgets">
+      <div>
+        <span>How clear is this regulation?</span>
+        <freedback-stars
+          data-target="http://data.europa.eu/eli/reg/2016/679/oj"
+          data-read="https://collection.demo.freedback.net/index"
+          data-publish="https://feedback.demo.freedback.net/annotations/"
+          data-sign></freedback-stars>
+      </div>
+      <freedback-comment
+        data-target="http://data.europa.eu/eli/reg/2016/679/oj#comments"
+        data-read="https://collection.demo.freedback.net/index"
+        data-publish="https://feedback.demo.freedback.net/annotations/"
+        data-sign></freedback-comment>
+    </div>
+  </div>
+
+  <!-- 2. A Wikipedia article -->
+  <div class="card">
+    <h3>A Wikipedia article — “Web annotation”</h3>
+    <p class="uri"><code>https://en.wikipedia.org/wiki/Web_annotation</code></p>
+    <p class="blurb">Wikipedia has its own talk pages, but nothing that lets an
+    outside protocol attach typed ratings or tags. Freedback treats the article
+    URL as a target and aggregates stars and folksonomy tags against it,
+    independently of MediaWiki.</p>
+    <div class="widgets">
+      <div>
+        <span>Rate this article:</span>
+        <freedback-stars
+          data-target="https://en.wikipedia.org/wiki/Web_annotation"
+          data-read="https://collection.demo.freedback.net/index"
+          data-publish="https://feedback.demo.freedback.net/annotations/"
+          data-sign></freedback-stars>
+      </div>
+      <freedback-tag
+        data-target="https://en.wikipedia.org/wiki/Web_annotation#tags"
+        data-read="https://collection.demo.freedback.net/index"
+        data-publish="https://feedback.demo.freedback.net/annotations/"
+        data-sign></freedback-tag>
+    </div>
+  </div>
+
+  <!-- 3. An arbitrary web page / spec -->
+  <div class="card">
+    <h3>An arbitrary web page — W3C Web Annotation Data Model</h3>
+    <p class="uri"><code>https://www.w3.org/TR/annotation-model/</code></p>
+    <p class="blurb">A W3C Recommendation is just a published page. With no
+    feedback UI of its own, it can still collect a thumbs verdict and comments
+    keyed to its URL — exactly the way Freedback would let you annotate any blog
+    post or specification.</p>
+    <div class="widgets">
+      <div>
+        <span>Useful spec?</span>
+        <freedback-thumb
+          data-target="https://www.w3.org/TR/annotation-model/"
+          data-read="https://collection.demo.freedback.net/index"
+          data-publish="https://feedback.demo.freedback.net/annotations/"
+          data-sign></freedback-thumb>
+      </div>
+      <freedback-comment
+        data-target="https://www.w3.org/TR/annotation-model/#comments"
+        data-read="https://collection.demo.freedback.net/index"
+        data-publish="https://feedback.demo.freedback.net/annotations/"
+        data-sign></freedback-comment>
+    </div>
+  </div>
+
+  <h2>How this works</h2>
+  <p>Each widget is a single custom element whose <code>data-target</code> is the
+  external URI <em>verbatim</em> — no rewriting, no proxy. For example, the
+  GDPR stars widget is literally:</p>
+  <pre><code>&lt;freedback-stars
+  data-target="http://data.europa.eu/eli/reg/2016/679/oj"
+  data-read="https://collection.demo.freedback.net/index"
+  data-publish="https://feedback.demo.freedback.net/annotations/"
+  data-sign&gt;&lt;/freedback-stars&gt;</code></pre>
+  <p><code>data-read</code> points at a collection server's <code>/index</code>
+  (aggregated reads), <code>data-publish</code> at a feedback server's
+  <code>/annotations/</code> (signed writes), and <code>data-sign</code> selects
+  the portable, self-signed P-256 identity. The target site appears nowhere in
+  that configuration. Comment and tag widgets use a <code>#fragment</code> on the
+  same resource so their counts never mix with the rating widget's.</p>
+
+  <p class="nav">
+    <a href="/">← Home</a> &nbsp;·&nbsp;
+    <a href="/demo/">Main widget showcase →</a>
+  </p>
+
+  <footer>
+    <p>Source &amp; docs: <a href="https://github.com/victorpaleologue/Freedback">github.com/victorpaleologue/Freedback</a></p>
+  </footer>
+</body>
+</html>
