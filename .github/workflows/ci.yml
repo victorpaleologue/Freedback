@@ -94,6 +94,8 @@ jobs:
       - name: Syntax-check JS
         run: |
           node --check widgets/freedback-widgets.js
+          node --check widgets/src/index.js
+          node --check widgets/build.mjs
           node --check widgets/test.cjs
           node --check widgets/e2e/serve.cjs
           node --check widgets/e2e/run-e2e.cjs
@@ -102,7 +104,27 @@ jobs:
           node --check firefox-extension/popup.js
       - name: Validate extension manifest is JSON
         run: node -e "JSON.parse(require('fs').readFileSync('firefox-extension/manifest.json','utf8'))"
-      - name: Widget helper unit tests
+      - name: Install widget package deps (esbuild + Playwright, pinned via lockfile)
+        working-directory: widgets
+        run: npm ci
+      - name: Build the @freedback/widgets dist bundles (ESM + UMD)
+        working-directory: widgets
+        run: npm run build
+      - name: Assert the dist bundles were produced
+        run: test -f widgets/dist/freedback-widgets.esm.js && test -f widgets/dist/freedback-widgets.umd.js
+      - name: Confirm npm pack ships only dist + source + types (no e2e/test)
+        working-directory: widgets
+        run: |
+          files="$(npm pack --dry-run --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{for(const f of JSON.parse(s)[0].files) console.log(f.path)})")"
+          echo "$files"
+          echo "$files" | grep -q '^freedback-widgets.js$'
+          echo "$files" | grep -q '^freedback-widgets.d.ts$'
+          echo "$files" | grep -q '^dist/freedback-widgets.esm.js$'
+          echo "$files" | grep -q '^dist/freedback-widgets.umd.js$'
+          if echo "$files" | grep -qE '(^|/)(e2e/|test\.cjs|build\.mjs|src/|node_modules/|demo\.html)'; then
+            echo "ERROR: tarball includes files that must be excluded" >&2; exit 1
+          fi
+      - name: Widget helper + event unit tests
         run: node widgets/test.cjs
 
   # Widgets E2E: render the custom elements in a real browser (Chromium) against

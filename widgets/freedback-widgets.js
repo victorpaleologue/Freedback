@@ -429,17 +429,31 @@
       if (!this.publishUrl) return;
       try {
         let ann;
+        let stored;
         if (this.signing) {
           ann = await buildSignedAnnotation(motivation, this.target, body, await getIdentity());
-          await publish(this.publishUrl, ann);
+          stored = await publish(this.publishUrl, ann);
         } else {
           ann = baseAnnotation(motivation, this.target, body);
-          await publish(this.publishUrl, ann, this.token);
+          stored = await publish(this.publishUrl, ann, this.token);
         }
+        // Additive outcome event: a host app (e.g. React via a ref) can observe a
+        // successful publish without scraping the widget's own DOM. `detail`
+        // carries the stored annotation / server `response` plus the `annotation`
+        // payload we sent. The `.fb-agg`/`.fb-status` DOM behavior is unchanged.
+        this.emit("freedback:published", { response: stored, annotation: ann });
         await this.refresh();
       } catch (e) {
         this.setStatus(String(e.message || e));
+        // Additive failure event mirroring `freedback:published`.
+        this.emit("freedback:error", { error: e });
       }
+    }
+
+    /** Dispatch a bubbling, composed CustomEvent on this host element so a host
+     *  app (React ref, plain DOM listener, …) can observe publish outcomes. */
+    emit(type, detail) {
+      this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
     }
   }
 

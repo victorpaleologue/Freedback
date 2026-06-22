@@ -132,3 +132,37 @@ jobs:
           files: release/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+  # --- publish @freedback/widgets to npm (guarded) -------------------------
+  # On a `vN` tag, publish the widget package to npm — but ONLY if an NPM_TOKEN
+  # repo secret is present. Until the owner reserves the `@freedback` npm scope
+  # and adds NPM_TOKEN (see docs/deployment.md), this job is skipped cleanly, so
+  # the release never fails for want of a token. The dist bundles are built fresh
+  # from the canonical source by the package's `prepublishOnly` hook.
+  publish-npm-widgets:
+    name: publish @freedback/widgets (npm)
+    needs: [publish]
+    runs-on: ubuntu-latest
+    # Guard: publish only on a vN tag AND only when the NPM_TOKEN secret is set.
+    # `secrets` is readable in a job-level `if`, so an absent token skips the job
+    # cleanly (no error) — the release never fails for want of a token. Reserve
+    # the `@freedback` npm scope + add the NPM_TOKEN secret to enable it (see
+    # docs/deployment.md).
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.NPM_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Install widget package deps (pinned via lockfile)
+        working-directory: widgets
+        run: npm ci
+      - name: Publish to npm (public scoped package)
+        working-directory: widgets
+        # `prepublishOnly` builds the dist bundles + runs the unit tests; the
+        # scoped package needs `--access public` on first publish. The version is
+        # the workspace version (1.0.0); npm rejects republishing the same one.
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
