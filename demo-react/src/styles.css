@@ -1,0 +1,225 @@
+:root {
+  --ink: #1a1a1a;
+  --muted: #555;
+  --line: #e2e2e2;
+  --accent: #0857c3;
+  --bg: #fafafa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1rem 4rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 2.4rem;
+  letter-spacing: -0.02em;
+}
+
+.hero .sub {
+  color: var(--muted);
+  margin-top: 0.35rem;
+  font-size: 1.05rem;
+}
+
+.banner {
+  border: 1px solid #ffe08a;
+  background: #fff8e1;
+  border-radius: 10px;
+  padding: 0.9rem 1.1rem;
+  margin: 1.5rem 0;
+  font-size: 0.95rem;
+}
+
+.banner strong {
+  color: #8a5a00;
+}
+
+.intro {
+  color: var(--ink);
+}
+
+.intro ul {
+  padding-left: 1.2rem;
+}
+
+h2 {
+  margin-top: 2.5rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.3rem;
+}
+
+.section-note {
+  color: var(--muted);
+  margin-top: -0.4rem;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem 1.25rem 1.1rem;
+  margin: 1rem 0;
+  background: #fff;
+}
+
+.card h3 {
+  margin: 0 0 0.25rem;
+}
+
+.card .blurb {
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.widget-host {
+  margin: 0.25rem 0 0.5rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  background: #f3f3f3;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.snippet {
+  margin-top: 0.5rem;
+}
+
+.snippet summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.snippet pre {
+  background: #1e1e2e;
+  color: #e6e6f0;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 0.5rem 0 0;
+}
+
+.snippet pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* ---- widget visuals (mirrors widgets/demo.html so the shipped elements
+   render the way they were designed to) ------------------------------------ */
+.fb-row {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.fb-stars button,
+.fb-thumb button {
+  font-size: 1.4rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0.1rem;
+  line-height: 1;
+}
+
+.fb-stars button:disabled,
+.fb-thumb button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.fb-agg {
+  color: #444;
+  margin-left: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fb-status {
+  color: #c00;
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.fb-in {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.fb-comment .fb-row,
+.fb-tag .fb-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.fb-comment button,
+.fb-tag button,
+.fb-scalar .fb-send {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f6f6f6;
+  cursor: pointer;
+}
+
+.fb-scalar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.fb-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0 0;
+}
+
+.fb-list li {
+  padding: 0.35rem 0.6rem;
+  background: #f6f7fb;
+  border-radius: 6px;
+  margin-bottom: 0.3rem;
+}
+
+.fb-chip {
+  display: inline-block;
+  background: #eef;
+  border-radius: 999px;
+  padding: 0.1em 0.7em;
+  margin: 0.15em;
+  font-size: 0.85rem;
+}

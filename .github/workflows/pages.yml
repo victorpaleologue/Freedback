@@ -4,6 +4,10 @@ name: Pages
 # resolve: the `@context`, the vocabulary, the SHACL shapes / validation profile,
 # plus the drop-in widget script. Pages is static-only — it never runs any of the
 # servers (see docs/adr / roadmap M10).
+#
+# The landing page is the React widget showcase (demo-react/), built here and
+# copied to the site root. It runs against an in-browser mock backend (no live
+# server), so visitors see the shipped widgets behave realistically.
 on:
   push:
     branches: [main]
@@ -11,6 +15,7 @@ on:
       - "ontology/**"
       - "site/**"
       - "widgets/**"
+      - "demo-react/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -31,8 +36,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: demo-react/package-lock.json
+      - name: Build the React widget showcase
+        working-directory: demo-react
+        # Keep the bundled widget script in lockstep with the canonical source:
+        # the build embeds public/freedback-widgets.js, but the canonical copy is
+        # widgets/freedback-widgets.js — sync it before building so they cannot
+        # drift. (The /widgets/* copy below also serves the canonical script.)
+        run: |
+          cp ../widgets/freedback-widgets.js public/freedback-widgets.js
+          npm ci
+          npm run build
       - name: Assemble the static site
         run: |
+          mkdir -p _site
+          # 1) The React showcase IS the landing page. Copy its build output to
+          #    the site root FIRST, so the pinned artifacts copied afterwards
+          #    always win on any collision (none expected — they live in
+          #    dedicated /ns, /profile, /widgets subtrees and the React app owns
+          #    /index.html + /assets/*).
+          cp -r demo-react/dist/. _site/
           mkdir -p _site/ns _site/profile/1 _site/widgets
           # The pinned protocol artifacts, at the URLs context.rs pins:
           #   FREEDBACK     https://freedback.net/ns#
@@ -58,7 +85,9 @@ jobs:
           # Drop-in widget script + demo, served at a stable CDN-style URL.
           cp widgets/freedback-widgets.js _site/widgets/freedback-widgets.js
           cp widgets/demo.html            _site/widgets/demo.html
-          cp site/index.html              _site/index.html
+          # NOTE: site/index.html is no longer the landing page — the React
+          # showcase (copied to _site/index.html above) replaces it. Its links
+          # (protocol artifacts, source) are folded into the React app footer.
           # Custom domain: GitHub Pages reads this CNAME and provisions HTTPS once
           # the apex DNS points at the Pages IPs (see docs/deployment.md).
           echo 'freedback.net' > _site/CNAME
