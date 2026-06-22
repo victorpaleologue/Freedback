@@ -5,8 +5,12 @@ The Freedback widgets are **vanilla [custom elements](https://developer.mozilla.
 `<freedback-comment>`, `<freedback-tag>`) shipped as a single dependency-free
 script, `freedback-widgets.js`. Because they are real DOM elements configured
 entirely through `data-*` attributes, **React renders them natively** — React
-always forwards `data-*` (and `aria-*`) attributes to the DOM, so you do not
-need a wrapper component or refs to use them.
+always forwards `data-*` (and `aria-*`) attributes to the DOM, so for the common
+case you can drop the tag straight into JSX with no wrapper or refs. (One
+subtlety — a widget reads its `data-*` in `connectedCallback`, so the attributes
+must be set *before* the element is attached; plain JSX does this, but a `ref`
+that configures the element after mount would be too late. A tiny wrapper makes
+this bulletproof — see [A reusable wrapper](#a-reusable-wrapper-optional).)
 
 > **Status (be aware):** the widgets are **not yet published to npm**, and the
 > script registers the elements as a *side effect* rather than exporting them as
@@ -170,6 +174,40 @@ function Feedback({ url }: { url: string }) {
 | `data-sign` | — | **presence** enables self-signed publishing (a per-browser P-256 key in IndexedDB, WebCrypto). Write it as `data-sign=""` in JSX. |
 | `data-token` | — | an OAuth bearer for the app-managed identity instead of `data-sign`. `data-sign` wins if both are set. |
 | `data-worst` / `data-best` / `data-step` | scalar only | the `<freedback-scalar>` scale. |
+
+### A reusable wrapper (optional)
+
+Plain JSX is fine, but if you use the widgets in many places — or want to be
+immune to the `connectedCallback`-before-attributes timing note above — wrap them
+in one small component that sets the attributes **while the element is detached**,
+then appends it:
+
+```tsx
+// FreedbackWidget.tsx
+import { useEffect, useRef } from "react";
+
+type Kind = "stars" | "thumb" | "scalar" | "comment" | "tag";
+
+export function FreedbackWidget({ kind, ...data }: { kind: Kind } & Record<`data-${string}`, string>) {
+  const host = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = document.createElement(`freedback-${kind}`);
+    for (const [k, v] of Object.entries(data)) el.setAttribute(k, v); // set BEFORE connect
+    host.current!.replaceChildren(el);                                 // now connectedCallback sees full config
+    return () => host.current?.replaceChildren();
+  });
+  return <div ref={host} />;
+}
+```
+
+```tsx
+<FreedbackWidget kind="stars" data-target={url} data-read={collect} data-publish={publish} data-sign="" />
+```
+
+The project's live showcase uses exactly this pattern — see
+[`demo-react/src/FreedbackWidget.jsx`](../demo-react/src/FreedbackWidget.jsx),
+which renders the **shipped** widgets against an in-browser mock backend (the
+demo at `https://freedback.net`).
 
 ### 5. Notes & gotchas
 
