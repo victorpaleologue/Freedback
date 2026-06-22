@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback — a portable talk-feedback form</title>
+
+  <!-- 1) Install the in-browser fetch mock FIRST (exposes window.FreedbackMock). -->
+  <script src="/collect/mock.js"></script>
+  <!-- 2) Then the canonical drop-in widget script. -->
+  <script src="/widgets/freedback-widgets.js"></script>
+
+  <style>
+    :root {
+      --bg: #ffffff; --fg: #1a1a1a; --muted: #555; --card: #f7f7f8;
+      --border: #e2e2e6; --link: #0857c3; --accent: #0857c3;
+      --banner-bg: #fff8e1; --banner-fg: #6b5300; --banner-border: #f0d98a;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16171a; --fg: #e9e9ec; --muted: #a4a4ad; --card: #202227;
+        --border: #34363d; --link: #6fa8ff; --accent: #6fa8ff;
+        --banner-bg: #2a2410; --banner-fg: #e8d48a; --banner-border: #5a4d1c;
+      }
+    }
+    body {
+      font: 16px/1.6 system-ui, sans-serif; max-width: 48rem;
+      margin: 3rem auto; padding: 0 1rem; color: var(--fg); background: var(--bg);
+    }
+    code { background: var(--card); padding: 0.1em 0.35em; border-radius: 4px; }
+    a { color: var(--link); }
+    h1 { margin-bottom: 0; }
+    h2 { margin-top: 2.5rem; }
+    .sub { color: var(--muted); margin-top: 0.25rem; }
+    ul { padding-left: 1.2rem; }
+    .banner {
+      background: var(--banner-bg); color: var(--banner-fg);
+      border: 1px solid var(--banner-border); border-radius: 8px;
+      padding: 0.75rem 1rem; margin: 1.5rem 0; font-size: 0.95rem;
+    }
+    .q {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0;
+    }
+    .q > label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
+    .q small { color: var(--muted); font-weight: 400; }
+    button {
+      font: inherit; cursor: pointer; color: var(--bg); background: var(--accent);
+      border: none; border-radius: 6px; padding: 0.45rem 0.9rem;
+    }
+    .export-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin: 1rem 0; }
+    .count { color: var(--muted); }
+    footer { margin-top: 3rem; color: var(--muted); font-size: 0.9rem; }
+    /* minimal widget polish */
+    freedback-stars, freedback-scalar, freedback-thumb, freedback-comment, freedback-tag { display: block; }
+  </style>
+</head>
+<body>
+  <h1>Collect feedback, without the lock-in</h1>
+  <p class="sub">A post-talk feedback form built from drop-in Freedback widgets —
+  every response is a W3C Web Annotation you own and can export.</p>
+
+  <div class="banner">
+    <strong>Demo mode.</strong> There is no live server. Responses are handled by
+    an in-browser mock, seeded with a few sample answers. Nothing you submit is
+    sent anywhere — it lives only in this tab until you reload.
+  </div>
+
+  <p>This is the kind of form people normally build in Google Forms, Typeform, or
+  SurveyMonkey. The difference: here each question is just a small custom element,
+  and each answer is stored as <strong>W3C Web Annotation JSON-LD</strong> (RDF).
+  That makes the collected data <strong>portable, queryable, and not locked inside
+  a form silo</strong> — you can export it to a spreadsheet (CSV), keep the raw
+  JSON-LD, or point any W3C-Web-Annotation or SPARQL viewer at it.</p>
+
+  <h2>Post-talk feedback form</h2>
+  <p class="sub">Talk: <em>RDF in the Browser</em> —
+  <code>https://talks.example/2026/rdf-in-the-browser</code>. Each question is a
+  distinct widget on its own target URI, so answers never cross-count.</p>
+
+  <div class="q">
+    <label for="">Overall, how would you rate this talk? <small>(0–10)</small></label>
+    <freedback-scalar
+      data-target="https://talks.example/2026/rdf-in-the-browser#q-overall"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-worst="0" data-best="10" data-step="1"
+      data-sign></freedback-scalar>
+  </div>
+
+  <div class="q">
+    <label>How clear was the delivery?</label>
+    <freedback-stars
+      data-target="https://talks.example/2026/rdf-in-the-browser#q-clarity"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-stars>
+  </div>
+
+  <div class="q">
+    <label>Would you recommend it?</label>
+    <freedback-thumb
+      data-target="https://talks.example/2026/rdf-in-the-browser#q-recommend"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-thumb>
+  </div>
+
+  <div class="q">
+    <label>What could be improved?</label>
+    <freedback-comment
+      data-target="https://talks.example/2026/rdf-in-the-browser#q-comments"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-comment>
+  </div>
+
+  <div class="q">
+    <label>Topics you'd want next time</label>
+    <freedback-tag
+      data-target="https://talks.example/2026/rdf-in-the-browser#q-tags"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-tag>
+  </div>
+
+  <h2>Collected responses</h2>
+  <p>Because every answer is a stored annotation, the organiser can take the data
+  with them. Export it now:</p>
+  <div class="export-row">
+    <button id="export-csv" type="button">Export CSV</button>
+    <button id="export-jsonld" type="button">Export JSON-LD</button>
+    <button id="refresh-count" type="button">Refresh count</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <h2>Viewing &amp; analyzing the data</h2>
+  <p>The responses are <strong>W3C Web Annotation JSON-LD over RDF</strong>, an open
+  standard — so beyond the CSV → spreadsheet path, you can use existing tooling
+  rather than whatever a form vendor happens to offer:</p>
+  <ul>
+    <li><strong>W3C Web Annotation clients / viewers</strong> understand the same
+      annotation model, e.g.
+      <a href="https://hypothes.is">Hypothesis</a>,
+      <a href="https://recogito.pelagios.org">Recogito</a>, and
+      <a href="https://annotorious.dev">Annotorious</a>.</li>
+    <li><strong>SPARQL.</strong> The Freedback collection / feedback servers store
+      responses as RDF (Oxigraph), so a SPARQL endpoint can be queried and
+      explored interactively with <a href="https://yasgui.triply.cc">YASGUI</a>.</li>
+    <li><strong>Spreadsheets / BI.</strong> The CSV export imports straight into
+      Google Sheets, Excel, or any business-intelligence tool.</li>
+  </ul>
+
+  <footer>
+    <a href="/">← Freedback home</a> &nbsp;·&nbsp;
+    <a href="/demo/">Main widget showcase →</a>
+  </footer>
+
+  <script>
+    (function () {
+      function fields(ann) {
+        // Pull the first body (these demo questions carry exactly one body each).
+        var body = Array.isArray(ann.body) ? ann.body[0] : ann.body;
+        body = body || {};
+        var type = body.type;
+        var bodyType = Array.isArray(type) ? type.join(" ") : (type || "");
+        var isRating = /Rating/.test(bodyType);
+        var creator = ann.creator && typeof ann.creator === "object" ? ann.creator.id : ann.creator;
+        return {
+          target: ann.target || "",
+          motivation: ann.motivation || "",
+          body_type: bodyType,
+          rating_value: isRating && body["schema:ratingValue"] != null ? body["schema:ratingValue"] : "",
+          worst: isRating && body["schema:worstRating"] != null ? body["schema:worstRating"] : "",
+          best: isRating && body["schema:bestRating"] != null ? body["schema:bestRating"] : "",
+          text: !isRating && body.value != null ? body.value : "",
+          creator: creator || "",
+          created: ann.created || "",
+          id: ann.id || "",
+        };
+      }
+
+      var COLUMNS = ["target", "motivation", "body_type", "rating_value", "worst", "best", "text", "creator", "created", "id"];
+
+      function csvCell(v) {
+        var s = v == null ? "" : String(v);
+        if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+        return s;
+      }
+
+      function buildCsv(rows) {
+        var lines = [COLUMNS.join(",")];
+        rows.forEach(function (ann) {
+          var f = fields(ann);
+          lines.push(COLUMNS.map(function (c) { return csvCell(f[c]); }).join(","));
+        });
+        return lines.join("\r\n");
+      }
+
+      function download(filename, text, mime) {
+        var blob = new Blob([text], { type: mime });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+      }
+
+      function store() {
+        return (window.FreedbackMock && window.FreedbackMock.dump()) || [];
+      }
+
+      function updateCount() {
+        var n = store().length;
+        document.getElementById("count").textContent =
+          n + " response" + (n === 1 ? "" : "s") + " collected so far.";
+      }
+
+      document.getElementById("export-csv").addEventListener("click", function () {
+        download("freedback-responses.csv", buildCsv(store()), "text/csv;charset=utf-8");
+      });
+      document.getElementById("export-jsonld").addEventListener("click", function () {
+        download("freedback-responses.jsonld", JSON.stringify(store(), null, 2), "application/ld+json");
+      });
+      document.getElementById("refresh-count").addEventListener("click", updateCount);
+
+      updateCount();
+    })();
+  </script>
+</body>
+</html>
