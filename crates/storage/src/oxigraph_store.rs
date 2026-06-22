@@ -16,7 +16,7 @@ use crate::{
     latest_edits, order_records, FeedbackStore, Page, PutOutcome, Query, Record, Result, StoreError,
 };
 
-const RAW_PRED: &str = "https://freedback.org/ns#raw";
+const RAW_PRED: &str = "https://freedback.net/ns#raw";
 
 /// An Oxigraph-backed store (in-memory backend).
 pub struct OxigraphStore {

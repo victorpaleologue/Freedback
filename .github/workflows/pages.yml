@@ -1,14 +1,16 @@
 name: Pages
 
-# Publishes the static protocol artifacts (the @context, ontology, and SHACL
-# shapes) so the pinned IRIs resolve. Pages is static-only — it never runs any
-# of the servers (see docs/adr / roadmap M10).
+# Publishes the static protocol artifacts so the pinned `freedback.net` IRIs
+# resolve: the `@context`, the vocabulary, the SHACL shapes / validation profile,
+# plus the drop-in widget script. Pages is static-only — it never runs any of the
+# servers (see docs/adr / roadmap M10).
 on:
   push:
     branches: [main]
     paths:
       - "ontology/**"
       - "site/**"
+      - "widgets/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -31,13 +33,35 @@ jobs:
       - uses: actions/checkout@v4
       - name: Assemble the static site
         run: |
-          mkdir -p _site/ns
+          mkdir -p _site/ns _site/profile/1 _site/widgets
+          # The pinned protocol artifacts, at the URLs context.rs pins:
+          #   FREEDBACK     https://freedback.net/ns#
+          #   CONTEXT_URL   https://freedback.net/ns/context.jsonld
+          #   PROFILE_URL   https://freedback.net/profile/1
           cp ontology/context.jsonld _site/ns/context.jsonld
           cp ontology/freedback.ttl  _site/ns/freedback.ttl
           cp ontology/shapes.ttl     _site/ns/shapes.ttl
-          cp site/index.html         _site/index.html
-          # Custom domain (freedback.org) is pending registrar confirmation —
-          # see docs/naming.md. Add a CNAME file here once the domain is owned.
+          # The vocabulary doc at the namespace base, so `https://freedback.net/ns`
+          # dereferences (Pages serves /ns → /ns/index via the .ttl copy).
+          cp ontology/freedback.ttl  _site/ns/index.ttl
+          # The validation profile (dcterms:conformsTo target) dereferences to the
+          # SHACL shapes it pins. `profile/1/index.html` answers /profile/1.
+          cp ontology/shapes.ttl     _site/profile/1/shapes.ttl
+          {
+            echo '<!doctype html><meta charset="utf-8"><title>Freedback profile/1</title>'
+            echo '<h1>Freedback validation profile <code>freedback/1</code></h1>'
+            echo '<p>The profile pinned by <code>dcterms:conformsTo</code>. It is the'
+            echo 'SHACL shapes at <a href="shapes.ttl">shapes.ttl</a> over the'
+            echo '<a href="/ns/context.jsonld">@context</a> /'
+            echo '<a href="/ns/freedback.ttl">vocabulary</a>.</p>'
+          } > _site/profile/1/index.html
+          # Drop-in widget script + demo, served at a stable CDN-style URL.
+          cp widgets/freedback-widgets.js _site/widgets/freedback-widgets.js
+          cp widgets/demo.html            _site/widgets/demo.html
+          cp site/index.html              _site/index.html
+          # Custom domain: GitHub Pages reads this CNAME and provisions HTTPS once
+          # the apex DNS points at the Pages IPs (see docs/deployment.md).
+          echo 'freedback.net' > _site/CNAME
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

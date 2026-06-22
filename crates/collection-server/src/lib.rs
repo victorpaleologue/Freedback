@@ -506,7 +506,7 @@ async fn well_known(State(state): State<AppState>) -> Json<Value> {
         "protocol": "freedback/1",
         "formats": ["application/ld+json"],
         "capabilities": ["collection-index", "equivalence", "polite-cache"],
-        "conformsTo": "https://freedback.org/profile/1",
+        "conformsTo": "https://freedback.net/profile/1",
         "links": [
             { "rel": "self", "href": format!("{}/.well-known/freedback", state.base_url) },
             { "rel": "index", "href": format!("{}/index", state.base_url) }

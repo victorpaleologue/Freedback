@@ -189,7 +189,7 @@ shapes at stable `/ns/*` URLs (+ landing page). See `docs/deployment.md`.
   `FREEDBACK_ROCKSDB_PATH`, `--build-arg FEEDBACK_FEATURES=rocksdb`); and a
   **tagged release pipeline** (`release.yml`: `v*` tag → musl binaries + wasm
   package on the GitHub Release). **Still external/deferred:** the
-  `freedback.org` Pages custom domain (pending registrar — see `docs/naming.md`).
+  `freedback.net` Pages custom domain (pending registrar — see `docs/naming.md`).
 
 ## Cross-cutting issues
 - **CI** ✅ — fmt, clippy, native test, wasm32 build, `x86_64-linux-musl` static

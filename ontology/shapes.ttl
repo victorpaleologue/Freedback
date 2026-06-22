@@ -1,5 +1,5 @@
 @prefix sh:        <http://www.w3.org/ns/shacl#> .
-@prefix freedback: <https://freedback.org/ns#> .
+@prefix freedback: <https://freedback.net/ns#> .
 @prefix schema:    <http://schema.org/> .
 @prefix oa:        <http://www.w3.org/ns/oa#> .
 @prefix rdf:       <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -7,7 +7,7 @@
 @prefix dcterms:   <http://purl.org/dc/terms/> .
 
 #################################################################
-# Freedback SHACL shapes — profile https://freedback.org/profile/1
+# Freedback SHACL shapes — profile https://freedback.net/profile/1
 #
 # ALL validation lives here (datatype, bounds, required, reject). This is the
 # single authority the feedback-server runs on write, before persistence.

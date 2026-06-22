@@ -78,7 +78,7 @@ WASM consumers depend on it with `default-features = false`.
 ## Stable-URL policy
 
 `ontology/context.jsonld`, `ontology/freedback.ttl`, `ontology/shapes.ttl` are
-published at stable URLs under `https://freedback.org/` and MUST NOT change
+published at stable URLs under `https://freedback.net/` and MUST NOT change
 incompatibly once released. The `@context` and profile IRIs are pinned in
 `protocol-lib::context`.
 

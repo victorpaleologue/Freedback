@@ -63,5 +63,5 @@ publishing, as a smoke test.
   met; `docker run` and the stable ontology URLs were already satisfied.
 - Two build profiles: the default portable in-memory image, and an opt-in
   durable RocksDB image/binary — no Clang imposed on the common case.
-- Still **out of scope** (external, not code): the `freedback.org` Pages custom
+- Still **out of scope** (external, not code): the `freedback.net` Pages custom
   domain, pending registrar confirmation (`docs/naming.md`).

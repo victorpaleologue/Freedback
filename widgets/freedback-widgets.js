@@ -26,8 +26,8 @@
 (() => {
   "use strict";
 
-  const ANNO_CTX = ["http://www.w3.org/ns/anno.jsonld", "https://freedback.org/ns/context.jsonld"];
-  const PROFILE = "https://freedback.org/profile/1";
+  const ANNO_CTX = ["http://www.w3.org/ns/anno.jsonld", "https://freedback.net/ns/context.jsonld"];
+  const PROFILE = "https://freedback.net/profile/1";
 
   /** Build the read URL with a target query param. */
   function readUrl(base, target) {

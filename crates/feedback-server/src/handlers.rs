@@ -224,7 +224,7 @@ pub async fn post_annotations(
 
     let succeeded = results.iter().filter(|r| r["status"] == 201).count();
     let body = json!({
-        "@context": "https://freedback.org/ns/batch/1",
+        "@context": "https://freedback.net/ns/batch/1",
         "type": "BatchResult",
         "total": results.len(),
         "succeeded": succeeded,
@@ -501,7 +501,7 @@ pub async fn well_known(State(state): State<AppState>) -> Json<Value> {
         "protocol": "freedback/1",
         "formats": ["application/ld+json"],
         "capabilities": ["wap-container", "sync-cursor", "jws-identity", "oauth-identity", "jwt-export", "mangrove-review", "batch-multistatus", "negentropy"],
-        "conformsTo": "https://freedback.org/profile/1",
+        "conformsTo": "https://freedback.net/profile/1",
         "links": [
             { "rel": "self", "href": format!("{}/.well-known/freedback", state.base_url) },
             { "rel": "http://www.w3.org/ns/oa#annotationService",

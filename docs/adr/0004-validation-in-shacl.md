@@ -20,7 +20,7 @@ open-world and monotonic — they *infer* rather than *reject*. Asserting
   before persistence; invalid bodies are rejected `422` with the SHACL report.
 - Engine: **rudof `shacl_validation`** (native). Shapes are loaded once at boot.
 - The profile is pinned per-annotation via `dcterms:conformsTo`
-  (`https://freedback.org/profile/1`).
+  (`https://freedback.net/profile/1`).
 
 ## SHACL Core, not SHACL-SPARQL
 

@@ -207,7 +207,7 @@ mod tests {
         .with_created("2026-06-21T10:00:00Z");
         let nt = to_ntriples(&ann);
         assert!(nt.contains("<http://www.w3.org/ns/oa#Annotation>"));
-        assert!(nt.contains("<https://freedback.org/ns#StarRating>"));
+        assert!(nt.contains("<https://freedback.net/ns#StarRating>"));
         assert!(nt.contains(
             "<http://schema.org/ratingValue> \"4.0\"^^<http://www.w3.org/2001/XMLSchema#double>"
         ));

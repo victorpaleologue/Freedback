@@ -50,7 +50,7 @@ The POST body shape selects the semantics:
 
   ```json
   {
-    "@context": "https://freedback.org/ns/batch/1",
+    "@context": "https://freedback.net/ns/batch/1",
     "type": "BatchResult",
     "total": 3, "succeeded": 2, "failed": 1,
     "results": [
