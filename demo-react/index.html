@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Freedback — live widget showcase</title>
+    <meta
+      name="description"
+      content="A federated, open feedback protocol carried as W3C Web Annotations. Try the drop-in widgets live — running against an in-browser mock backend."
+    />
+    <!--
+      The shipped, vanilla Web Components (component 3), loaded verbatim from
+      widgets/freedback-widgets.js. It registers the custom elements
+      (<freedback-stars> etc.) on a global side-effecting IIFE. Loaded as a
+      classic <script> in <head> so the elements are defined before React mounts
+      and renders them. The in-browser mock backend (src/mock-backend.js) installs
+      its window.fetch interceptor from the React entry, before any widget refresh.
+    -->
+    <script src="/freedback-widgets.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
