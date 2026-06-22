@@ -1,0 +1,26 @@
+# Fly.io app: the Freedback **discovery server / registry** (component 2).
+#
+# Deploy from the repo root:
+#   fly launch --no-deploy --copy-config --config deploy/fly/discovery.toml --name freedback-discovery
+#   fly deploy            --config deploy/fly/discovery.toml
+#
+# The registry is lightweight and in-memory — scale-to-zero is fine; it wakes
+# when a server announces or a client resolves.
+
+app = "freedback-discovery"
+primary_region = "cdg"
+
+[processes]
+app = "freedback-discovery-server"
+
+[env]
+FREEDBACK_BIND = "0.0.0.0:8090"
+FREEDBACK_BASE_URL = "https://discovery.freedback.net"
+
+[http_service]
+internal_port = 8090
+force_https = true
+auto_stop_machines = true
+auto_start_machines = true
+min_machines_running = 0
+processes = ["app"]

@@ -1,0 +1,45 @@
+# Fly.io app: the Freedback **demo feedback server** (component 1).
+#
+# Deploy from the repo root (so the Docker build context is the workspace):
+#   fly launch --no-deploy --copy-config --config deploy/fly/feedback.toml --name freedback-demo
+#   fly deploy            --config deploy/fly/feedback.toml
+#
+# This runs the in-memory build (ephemeral — fine for a demo; resets on restart).
+# For DURABLE storage, see the commented RocksDB block below + docs/hosting.md.
+
+app = "freedback-demo"
+primary_region = "cdg" # pick one near you: fly platform regions
+
+[build]
+# No build args → the default in-memory Oxigraph image (no Clang/RocksDB).
+# Durable variant: uncomment to build the on-disk RocksDB image instead.
+#  [build.args]
+#    FEEDBACK_FEATURES = "rocksdb"
+
+[processes]
+# The image bundles all three servers; run the feedback server in this app.
+app = "freedback-feedback-server"
+
+[env]
+FREEDBACK_BIND = "0.0.0.0:8080"
+# Set this to the public URL once DNS is attached (it mints ids/links).
+FREEDBACK_BASE_URL = "https://demo.freedback.net"
+# Let the browser widgets on freedback.net read cross-origin.
+FREEDBACK_CORS_PERMISSIVE = "1"
+# Durable variant: uncomment with the RocksDB build + the [mounts] block below.
+#  FREEDBACK_ROCKSDB_PATH = "/data/db"
+
+# Durable variant only — a persistent volume (create once:
+#   fly volumes create freedback_data --size 1 --region cdg):
+# [[mounts]]
+#   source = "freedback_data"
+#   destination = "/data"
+
+[http_service]
+internal_port = 8080
+force_https = true
+# Scale to zero when idle (cheap); wakes on the next request (brief cold start).
+auto_stop_machines = true
+auto_start_machines = true
+min_machines_running = 0
+processes = ["app"]
