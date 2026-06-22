@@ -246,7 +246,7 @@ async fn accepts_foreign_context_via_full_compaction() {
             "why":    { "@id": "http://www.w3.org/ns/oa#motivatedBy", "@type": "@id" },
             "on":     { "@id": "http://purl.org/dc/terms/created", "@type": "http://www.w3.org/2001/XMLSchema#dateTime" },
             "scores": { "@id": "http://www.w3.org/ns/oa#hasBody", "@type": "@id" },
-            "Stars":  "https://freedback.org/ns#StarRating",
+            "Stars":  "https://freedback.net/ns#StarRating",
             "stars":  { "@id": "http://schema.org/ratingValue", "@type": "http://www.w3.org/2001/XMLSchema#double" },
             "low":    { "@id": "http://schema.org/worstRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
             "high":   { "@id": "http://schema.org/bestRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
@@ -451,5 +451,5 @@ async fn well_known_advertises_capabilities() {
         .unwrap()
         .iter()
         .any(|c| c == "wap-container"));
-    assert_eq!(doc["conformsTo"], "https://freedback.org/profile/1");
+    assert_eq!(doc["conformsTo"], "https://freedback.net/profile/1");
 }

@@ -46,7 +46,7 @@ impl ApiError {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 json!({
                     "error": "SHACL validation failed",
-                    "conformsTo": "https://freedback.org/profile/1",
+                    "conformsTo": "https://freedback.net/profile/1",
                     "report": { "conforms": false, "violations": violations },
                 }),
             ),
@@ -62,7 +62,7 @@ impl IntoResponse for ApiError {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(json!({
                     "error": "SHACL validation failed",
-                    "conformsTo": "https://freedback.org/profile/1",
+                    "conformsTo": "https://freedback.net/profile/1",
                     "report": { "conforms": false, "violations": violations },
                 })),
             )

@@ -71,7 +71,7 @@ pub fn compact_to_pinned(doc: &Value) -> Result<Value> {
 
     // The input document, tagged with a base IRI so relative references resolve.
     let input = json_ld::RemoteDocument::new(
-        Some(iri!("https://freedback.org/.well-known/in").to_owned()),
+        Some(iri!("https://freedback.net/.well-known/in").to_owned()),
         Some("application/ld+json".parse().expect("static media type")),
         json_syntax::Value::from_serde_json(doc.clone()),
     );
@@ -87,7 +87,7 @@ pub fn compact_to_pinned(doc: &Value) -> Result<Value> {
         json_ld::syntax::Context::try_from_json(json_syntax::Value::from_serde_json(ctx_inner))
             .map_err(|e| Error::Validation(format!("pinned context invalid: {e:?}")))?;
     let context_ref = json_ld::RemoteContextReference::Loaded(json_ld::RemoteDocument::new(
-        Some(iri!("https://freedback.org/ns/context.jsonld").to_owned()),
+        Some(iri!("https://freedback.net/ns/context.jsonld").to_owned()),
         Some("application/ld+json".parse().expect("static media type")),
         context,
     ));
@@ -180,7 +180,7 @@ mod tests {
                 "by":      { "@id": "http://purl.org/dc/terms/creator", "@type": "@id" },
                 "on":      { "@id": "http://purl.org/dc/terms/created", "@type": "http://www.w3.org/2001/XMLSchema#dateTime" },
                 "scores":  { "@id": "http://www.w3.org/ns/oa#hasBody", "@type": "@id" },
-                "Stars":   "https://freedback.org/ns#StarRating",
+                "Stars":   "https://freedback.net/ns#StarRating",
                 "stars":   { "@id": "http://schema.org/ratingValue", "@type": "http://www.w3.org/2001/XMLSchema#double" },
                 "low":     { "@id": "http://schema.org/worstRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
                 "high":    { "@id": "http://schema.org/bestRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
@@ -246,7 +246,7 @@ mod tests {
                 "http://www.w3.org/ns/anno.jsonld",
                 {
                     "assessing": "http://www.w3.org/ns/oa#assessing",
-                    "StarRating": "https://freedback.org/ns#StarRating",
+                    "StarRating": "https://freedback.net/ns#StarRating",
                     "ratingValue": { "@id": "http://schema.org/ratingValue", "@type": "http://www.w3.org/2001/XMLSchema#double" },
                     "worstRating": { "@id": "http://schema.org/worstRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
                     "bestRating":  { "@id": "http://schema.org/bestRating",  "@type": "http://www.w3.org/2001/XMLSchema#double" }
@@ -280,7 +280,7 @@ mod tests {
                 "http://schema.org/",
                 {
                     "assessing": "http://www.w3.org/ns/oa#assessing",
-                    "StarRating": "https://freedback.org/ns#StarRating"
+                    "StarRating": "https://freedback.net/ns#StarRating"
                 }
             ],
             "type": "Annotation",

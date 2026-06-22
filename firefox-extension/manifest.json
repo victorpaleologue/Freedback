@@ -11,7 +11,7 @@
   "host_permissions": ["http://*/*", "https://*/*"],
   "browser_specific_settings": {
     "gecko": {
-      "id": "freedback@freedback.org"
+      "id": "freedback@freedback.net"
     }
   }
 }

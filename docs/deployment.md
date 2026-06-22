@@ -105,16 +105,36 @@ front of them. Browser/WASM clients have TLS managed by the browser.
 
 ## Static artifacts (GitHub Pages)
 
-`.github/workflows/pages.yml` publishes the protocol artifacts at stable URLs:
+`.github/workflows/pages.yml` publishes the protocol artifacts at the stable
+`freedback.net` URLs that `protocol-lib::context` pins:
 
-- `/ns/context.jsonld` — the JSON-LD `@context`
-- `/ns/freedback.ttl` — the vocabulary
-- `/ns/shapes.ttl` — the SHACL shapes
+- `https://freedback.net/ns/context.jsonld` — the JSON-LD `@context`
+- `https://freedback.net/ns/freedback.ttl` — the vocabulary (also at `/ns`)
+- `https://freedback.net/ns/shapes.ttl` — the SHACL shapes
+- `https://freedback.net/profile/1` — the validation profile (`dcterms:conformsTo`)
+- `https://freedback.net/widgets/freedback-widgets.js` — the drop-in widget script
 
-Pages is **static-only** and never runs a server. The pinned IRIs use
-`freedback.org`; the custom domain (CNAME) is pending registrar confirmation —
-see [`naming.md`](./naming.md). `freedback.dev` is **not** available (taken by an
-unrelated, dormant npm homonym).
+Pages is **static-only** and never runs a server. The workflow writes a `CNAME`
+of `freedback.net` into the artifact, so once the apex DNS points at GitHub Pages
+the site serves on the custom domain with auto-provisioned HTTPS.
+
+### Attaching `freedback.net` (one-time, registrar + GitHub UI)
+
+These steps are **outside the repo** and must be done by the domain owner:
+
+1. **DNS at your registrar** — point the apex `freedback.net` at GitHub Pages:
+   - `A` → `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`
+   - `AAAA` → `2606:50c0:8000::153`, `2606:50c0:8001::153`, `2606:50c0:8002::153`, `2606:50c0:8003::153`
+   - (optional) `CNAME` `www` → `<owner>.github.io`
+2. **Repo → Settings → Pages**: set **Source = GitHub Actions** (the `pages.yml`
+   workflow), set **Custom domain = `freedback.net`**, then enable **Enforce
+   HTTPS** once the certificate is issued.
+3. **(Recommended) Verify the domain** under GitHub **Settings → Pages → "Verified
+   domains"** (add the `TXT _github-pages-challenge-…` record it shows) to prevent
+   takeover.
+
+`freedback.dev` is **not** available (taken by an unrelated, dormant npm homonym
+— `docs/naming.md`); `freedback.net` is the owned, canonical base.
 
 ## CI validation
 

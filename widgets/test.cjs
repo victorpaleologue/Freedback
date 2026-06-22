@@ -24,7 +24,7 @@ const {
 const star = baseAnnotation("assessing", "https://ex/1", starBody(4));
 assert.strictEqual(star.type, "Annotation");
 assert.strictEqual(star.motivation, "assessing");
-assert.strictEqual(star.conformsTo, "https://freedback.org/profile/1");
+assert.strictEqual(star.conformsTo, "https://freedback.net/profile/1");
 assert.ok(Array.isArray(star.body) && star.body.length === 1);
 assert.ok(Array.isArray(star["@context"]));
 
@@ -49,10 +49,10 @@ assert.strictEqual(readUrl("http://h/index?x=1", "a"), "http://h/index?x=1&targe
 // ever diverge, signatures made in the browser would stop verifying server-side,
 // so this is the keystone test for WebCrypto signing (ADR 0013).
 const EXPECTED_CANONICAL =
-  '{"@context":["http://www.w3.org/ns/anno.jsonld","https://freedback.org/ns/context.jsonld"],' +
+  '{"@context":["http://www.w3.org/ns/anno.jsonld","https://freedback.net/ns/context.jsonld"],' +
   '"body":[{"schema:bestRating":5,"schema:ratingValue":4,"schema:worstRating":1,' +
   '"type":["freedback:StarRating","schema:Rating"]}],' +
-  '"conformsTo":"https://freedback.org/profile/1","created":"2026-06-21T10:00:00Z",' +
+  '"conformsTo":"https://freedback.net/profile/1","created":"2026-06-21T10:00:00Z",' +
   '"creator":{"id":"urn:freedback:key:abc"},"motivation":"assessing",' +
   '"target":"https://example.com/item/1","type":"Annotation"}';
 

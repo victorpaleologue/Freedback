@@ -1,4 +1,4 @@
-@prefix freedback: <https://freedback.org/ns#> .
+@prefix freedback: <https://freedback.net/ns#> .
 @prefix schema:    <http://schema.org/> .
 @prefix oa:        <http://www.w3.org/ns/oa#> .
 @prefix skos:      <http://www.w3.org/2004/02/skos/core#> .
@@ -16,12 +16,12 @@
 # docs/adr/0004-validation-in-shacl.md.
 #################################################################
 
-<https://freedback.org/ns>
+<https://freedback.net/ns>
     a owl:Ontology ;
     rdfs:label "Freedback vocabulary" ;
     rdfs:comment "Typed feedback bodies for W3C Web Annotations." ;
     owl:versionInfo "1" ;
-    dcterms:conformsTo <https://freedback.org/profile/1> .
+    dcterms:conformsTo <https://freedback.net/profile/1> .
 
 # --- Typed rating bodies: all subclasses of schema:Rating (INVARIANT 2) ------
 

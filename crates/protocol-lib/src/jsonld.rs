@@ -302,7 +302,7 @@ mod tests {
                 "schema:worstRating": 1,
                 "schema:bestRating": 5
             },
-            "conformsTo": "https://freedback.org/profile/1"
+            "conformsTo": "https://freedback.net/profile/1"
         });
         let parsed = from_jsonld(&variant).unwrap();
         assert_eq!(

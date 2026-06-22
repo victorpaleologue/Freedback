@@ -17,12 +17,12 @@ pub const DCTERMS: &str = "http://purl.org/dc/terms/";
 pub const RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
 
 /// The Freedback vocabulary namespace. MUST resolve to the served ontology.
-pub const FREEDBACK: &str = "https://freedback.org/ns#";
+pub const FREEDBACK: &str = "https://freedback.net/ns#";
 
 /// Stable URL of the pinned JSON-LD `@context` document (`ontology/context.jsonld`).
-pub const CONTEXT_URL: &str = "https://freedback.org/ns/context.jsonld";
+pub const CONTEXT_URL: &str = "https://freedback.net/ns/context.jsonld";
 /// Stable URL of the profile this build conforms to (pinned via `dcterms:conformsTo`).
-pub const PROFILE_URL: &str = "https://freedback.org/profile/1";
+pub const PROFILE_URL: &str = "https://freedback.net/profile/1";
 /// Protocol identifier advertised in `/.well-known/freedback`.
 pub const PROTOCOL_ID: &str = "freedback/1";
 

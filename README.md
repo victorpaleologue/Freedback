@@ -32,7 +32,8 @@ green on **native + wasm32**:
 
 All 10 milestones have a working deliverable; the Rust backbone is done and
 tested (43 Rust tests + JS helper tests).
-**Naming note:** an unrelated dormant npm `freedback` exists and holds
+**Naming note:** the canonical IRIs and the Pages site use the owned
+**`freedback.net`** domain; an unrelated dormant npm `freedback` holds
 `freedback.dev` — see [`docs/naming.md`](docs/naming.md).
 
 ## Quick start

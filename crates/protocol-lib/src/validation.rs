@@ -33,7 +33,7 @@ use crate::error::{Error, Result};
 use crate::model::Annotation;
 use crate::rdf;
 
-/// The SHACL shapes for profile `https://freedback.org/profile/1`, embedded at
+/// The SHACL shapes for profile `https://freedback.net/profile/1`, embedded at
 /// compile time so the validator is self-contained.
 pub const SHAPES_TTL: &str = include_str!("../../../ontology/shapes.ttl");
 
