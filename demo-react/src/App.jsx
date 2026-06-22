@@ -46,7 +46,10 @@ export default function App() {
   return (
     <main>
       <header className="hero">
-        <h1>Freedback</h1>
+        <p className="home-link">
+          <a href="/">← freedback.net</a>
+        </p>
+        <h1>Freedback — live widget showcase</h1>
         <p className="sub">
           A federated, open protocol for typed feedback on anything with a URI —
           carried as W3C Web Annotations. Below are the <strong>shipped</strong>{" "}

@@ -5,9 +5,13 @@ name: Pages
 # plus the drop-in widget script. Pages is static-only — it never runs any of the
 # servers (see docs/adr / roadmap M10).
 #
-# The landing page is the React widget showcase (demo-react/), built here and
-# copied to the site root. It runs against an in-browser mock backend (no live
-# server), so visitors see the shipped widgets behave realistically.
+# Site layout:
+#   /            lightweight static landing page (site/index.html — no JS, ~3 KB;
+#                the most-hit URL, so it must stay tiny) + any other static demo
+#                pages under site/ (copied verbatim).
+#   /demo/       the rich React widget showcase (demo-react/, built with
+#                base=/demo/), running against an in-browser mock backend.
+#   /ns, /profile, /widgets   the pinned protocol artifacts.
 on:
   push:
     branches: [main]
@@ -41,7 +45,7 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: demo-react/package-lock.json
-      - name: Build the React widget showcase
+      - name: Build the React widget showcase (served at /demo/)
         working-directory: demo-react
         # Keep the bundled widget script in lockstep with the canonical source:
         # the build embeds public/freedback-widgets.js, but the canonical copy is
@@ -54,12 +58,15 @@ jobs:
       - name: Assemble the static site
         run: |
           mkdir -p _site
-          # 1) The React showcase IS the landing page. Copy its build output to
-          #    the site root FIRST, so the pinned artifacts copied afterwards
-          #    always win on any collision (none expected — they live in
-          #    dedicated /ns, /profile, /widgets subtrees and the React app owns
-          #    /index.html + /assets/*).
-          cp -r demo-react/dist/. _site/
+          # 1) The lightweight static landing page + any other static pages under
+          #    site/ own the root. Copy the whole tree verbatim (no build step) —
+          #    site/index.html is the ~3 KB landing page, and further static demo
+          #    pages (e.g. site/<name>/) ride along automatically.
+          cp -r site/. _site/
+          # 2) The rich React showcase is NOT the landing page — it lives at
+          #    /demo/ (built with base=/demo/ so its asset URLs are self-contained).
+          mkdir -p _site/demo
+          cp -r demo-react/dist/. _site/demo/
           mkdir -p _site/ns _site/profile/1 _site/widgets
           # The pinned protocol artifacts, at the URLs context.rs pins:
           #   FREEDBACK     https://freedback.net/ns#
@@ -85,9 +92,6 @@ jobs:
           # Drop-in widget script + demo, served at a stable CDN-style URL.
           cp widgets/freedback-widgets.js _site/widgets/freedback-widgets.js
           cp widgets/demo.html            _site/widgets/demo.html
-          # NOTE: site/index.html is no longer the landing page — the React
-          # showcase (copied to _site/index.html above) replaces it. Its links
-          # (protocol artifacts, source) are folded into the React app footer.
           # Custom domain: GitHub Pages reads this CNAME and provisions HTTPS once
           # the apex DNS points at the Pages IPs (see docs/deployment.md).
           echo 'freedback.net' > _site/CNAME
