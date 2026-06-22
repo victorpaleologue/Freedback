@@ -12,27 +12,34 @@ must be set *before* the element is attached; plain JSX does this, but a `ref`
 that configures the element after mount would be too late. A tiny wrapper makes
 this bulletproof — see [A reusable wrapper](#a-reusable-wrapper-optional).)
 
-> **Status (be aware):** the widgets are **not yet published to npm**, and the
-> script registers the elements as a *side effect* rather than exporting them as
-> ES modules, and it ships **no TypeScript types**. So the truly "dead-simple"
-> `npm add @freedback/widgets` → `import` → `<freedback-stars/>` flow is **not
-> there yet** — see [API review](#api-review--gaps-to-dead-simple) below for the
-> exact gaps and the plan to close them. This page documents the **best way that
-> works today** plus where we're headed.
+> **Status:** as of **1.0** the widgets ship as the npm package
+> **[`@freedback/widgets`](https://www.npmjs.com/package/@freedback/widgets)** with
+> an **ESM build** (side-effect import registers the elements), **bundled
+> TypeScript types** (zero-config JSX), and **outcome events**
+> (`freedback:published` / `freedback:error`). The dependency-free `<script src>`
+> path keeps working unchanged. The "dead-simple"
+> `npm add @freedback/widgets` → `import "@freedback/widgets"` → `<freedback-stars/>`
+> flow now works. A separate `@freedback/react` wrapper (camelCase props + typed
+> callbacks) is the only remaining stretch goal — see
+> [API review](#api-review--gaps-to-dead-simple).
 
 ---
 
-## TL;DR (what works today)
+## TL;DR (the dead-simple path)
 
-1. Load the script once (registers the five elements):
+1. Install and register the elements once (side-effect import):
 
-   ```html
-   <!-- index.html -->
-   <script src="https://freedback.net/widgets/freedback-widgets.js"></script>
+   ```sh
+   npm add @freedback/widgets
+   ```
+
+   ```ts
+   // main.tsx (or any module that runs once at startup)
+   import "@freedback/widgets";
    ```
 
 2. Drop an element into any `.tsx` — config is all `data-*`, so React just
-   renders it:
+   renders it, and the **bundled types** make it type-check with no setup:
 
    ```tsx
    export function ProductRating() {
@@ -47,92 +54,63 @@ this bulletproof — see [A reusable wrapper](#a-reusable-wrapper-optional).)
    }
    ```
 
-3. (TypeScript only) add a one-time JSX declaration so `<freedback-stars>` type-checks — [snippet below](#typescript-make-the-tags-type-check).
+That's it. The widget renders the current aggregate from `data-read`, and
+(because `data-sign` is present) lets the visitor publish a self-signed rating to
+`data-publish`. To react to the outcome in your app, listen for the
+[outcome events](#outcome-events-freedbackpublished--freedbackerror).
 
-That's it for behavior. The widget renders the current aggregate from
-`data-read`, and (because `data-sign` is present) lets the visitor publish a
-self-signed rating to `data-publish`.
+> **No build step?** You can still load the canonical script directly — it
+> registers the same five elements as a global side effect:
+>
+> ```html
+> <script src="https://freedback.net/widgets/freedback-widgets.js"></script>
+> <!-- or a CDN: <script src="https://unpkg.com/@freedback/widgets"></script> -->
+> ```
 
 ---
 
 ## Step by step (Vite + React + TypeScript)
 
-### 1. Get the script into your app
+### 1. Install + register the elements
 
-Until there's an npm package, pick one of:
-
-- **From the CDN (simplest):** the `<script>` tag above, pointing at
-  `https://freedback.net/widgets/freedback-widgets.js`.
-- **Vendored (pin the version, works offline):** copy `freedback-widgets.js`
-  into your app's `public/` and load `/freedback-widgets.js`.
-- **As a module side-effect import** (so it's part of your bundle graph): import
-  the file for its registration side effect. With Vite, the robust way is to
-  grab its URL and inject it once, because the file is an IIFE (not ESM):
-
-  ```ts
-  // freedback.ts — run once at app startup
-  import widgetUrl from "./vendor/freedback-widgets.js?url";
-
-  export function loadFreedbackWidgets() {
-    if (document.querySelector("script[data-freedback]")) return;
-    const s = document.createElement("script");
-    s.src = widgetUrl;
-    s.dataset.freedback = "";
-    document.head.appendChild(s);
-  }
-  ```
-
-  ```tsx
-  // main.tsx
-  import { loadFreedbackWidgets } from "./freedback";
-  loadFreedbackWidgets();
-  ```
-
-  > A bare `import "./vendor/freedback-widgets.js"` *can* work in a browser
-  > bundle, but the file currently also has a CommonJS `module.exports` branch,
-  > so the `?url`-and-inject approach above is the predictable one. This wart
-  > goes away once we ship an ESM build (see the review).
-
-Custom-element registration is global and idempotent — load the script **once**
-for the whole app, not per component.
-
-### 2. TypeScript: make the tags type-check
-
-The script ships no types, so add this once (e.g. `src/freedback.d.ts`). The
-widgets only take `data-*` attributes, so the typing is small:
-
-```ts
-// src/freedback.d.ts
-import type React from "react";
-
-type FreedbackProps = React.HTMLAttributes<HTMLElement> & {
-  "data-target": string;
-  "data-read"?: string;
-  "data-publish"?: string;
-  "data-token"?: string;
-  "data-sign"?: "";
-  // <freedback-scalar> scale:
-  "data-worst"?: string | number;
-  "data-best"?: string | number;
-  "data-step"?: string | number;
-};
-
-declare module "react" {
-  namespace JSX {
-    interface IntrinsicElements {
-      "freedback-stars": FreedbackProps;
-      "freedback-thumb": FreedbackProps;
-      "freedback-scalar": FreedbackProps;
-      "freedback-comment": FreedbackProps;
-      "freedback-tag": FreedbackProps;
-    }
-  }
-}
+```sh
+npm add @freedback/widgets
 ```
 
-> On **React 19** use `declare module "react"` (above). On **React ≤ 18** use the
-> global form instead: `declare global { namespace JSX { interface
-> IntrinsicElements { … } } }`.
+Register the five custom elements once for the whole app with a **side-effect
+import** (registration is global and idempotent — do it once, not per component):
+
+```ts
+// main.tsx — run once at app startup
+import "@freedback/widgets";
+```
+
+The package ships both an **ESM build** (what `import` resolves to in a bundler
+like Vite/webpack) and a **UMD/IIFE build** (what a `<script src>` loads). If you
+prefer no bundler, load the canonical script instead (CDN or vendored copy in
+`public/`):
+
+```html
+<script src="https://freedback.net/widgets/freedback-widgets.js"></script>
+<!-- or pin via the package: https://unpkg.com/@freedback/widgets -->
+```
+
+You can also import the helper + identity API from the same package:
+
+```ts
+import { jcs, starBody, exportIdentity, rotateIdentity } from "@freedback/widgets";
+```
+
+### 2. TypeScript: nothing to do — types are bundled
+
+`@freedback/widgets` ships its own `.d.ts`. It augments both
+`React.JSX.IntrinsicElements` (React 19) and the global `JSX` namespace (React
+≤ 18), **and** the framework-neutral `HTMLElementTagNameMap`, so all five tags
+type-check with **zero consumer setup** — no hand-written shim. (Older releases
+told you to add an `src/freedback.d.ts`; that is no longer needed — delete it if
+you have one.) The tags also type the `onPublished` / `onError` props for the
+[outcome events](#outcome-events-freedbackpublished--freedbackerror), and
+`document.querySelector("freedback-stars")` is typed as the element.
 
 ### 3. Insert the widget in your `.tsx`
 
@@ -215,9 +193,10 @@ demo at `https://freedback.net`).
   `localhost`). On `file://` or plain HTTP the widget falls back to read-only.
 - **Booleans in JSX.** Write `data-sign=""` (presence). `data-sign={true}` also
   works because the widget checks attribute *presence*, but `=""` is clearest.
-- **Reading the result.** Today the widget shows the outcome only inside its own
-  DOM (the aggregate updates; errors appear in its status line). There is **no
-  React callback / event** yet — see the review.
+- **Reading the result.** Besides updating its own DOM (the aggregate / status
+  line), each widget now **dispatches `freedback:published` / `freedback:error`
+  events** so your app can react — see
+  [Outcome events](#outcome-events-freedbackpublished--freedbackerror).
 - **One key per browser.** `data-sign` mints/reuses one identity per browser
   (IndexedDB). The `window.Freedback` global exposes
   `exportIdentity` / `importIdentity` / `rotateIdentity` for backup/rotation
@@ -228,51 +207,102 @@ demo at `https://freedback.net`).
 
 ---
 
+## Outcome events (`freedback:published` / `freedback:error`)
+
+After a publish, the widget **dispatches a `CustomEvent` on its host element** —
+additive to the existing DOM behavior (the aggregate refresh / `.fb-status`
+text), so nothing you relied on changes:
+
+| Event | When | `event.detail` |
+|---|---|---|
+| `freedback:published` | the POST succeeded | `{ response, annotation }` — the parsed server response and the annotation that was sent |
+| `freedback:error` | the POST failed | `{ error }` — the `Error` thrown |
+
+The events **bubble** and are **composed**, so you can also listen on a container.
+The bundled types add typed `onPublished` / `onError` props and a typed
+`addEventListener`.
+
+In React, attach the listeners via a ref in `useEffect` (custom events aren't
+React's synthetic `on*` props, so a ref is the reliable way):
+
+```tsx
+import { useEffect, useRef } from "react";
+
+function ProductRating({ url }: { url: string }) {
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onPublished = (e: Event) => {
+      const { response, annotation } = (e as CustomEvent).detail;
+      console.log("thanks! stored:", response, "sent:", annotation);
+    };
+    const onError = (e: Event) => {
+      console.warn("publish failed:", (e as CustomEvent).detail.error);
+    };
+    el.addEventListener("freedback:published", onPublished);
+    el.addEventListener("freedback:error", onError);
+    return () => {
+      el.removeEventListener("freedback:published", onPublished);
+      el.removeEventListener("freedback:error", onError);
+    };
+  }, []);
+
+  return (
+    <freedback-stars
+      ref={ref}
+      data-target={url}
+      data-read="https://collect.example/index"
+      data-publish="https://feedback.example/annotations/"
+      data-sign=""
+    />
+  );
+}
+```
+
+> The `ref` here only **observes** events — it does not configure the element, so
+> the `connectedCallback`-before-attributes timing note does not apply (the
+> `data-*` are set by JSX before mount). If you also need to set attributes
+> imperatively, use the [reusable wrapper](#a-reusable-wrapper-optional), which
+> can forward these listeners too.
+
+---
+
 ## API review — gaps to "dead simple"
 
-Writing this tutorial surfaced the friction between today's widget and the goal
-("`npm add`, import, drop into `.tsx`"). None of these are behavior bugs — the
-widgets work — they're **packaging/ergonomics** gaps. In rough priority:
+### Done in 1.0
 
-1. **No published npm package.** `widgets/package.json` is `private: true` and is
-   the e2e harness, not a distributable. There is no `main`/`module`/`exports`/
-   `types`. **Fix:** publish **`@freedback/widgets`** (the scope reserved in
-   `docs/naming.md`) with proper `exports` + `types`, so `npm add @freedback/widgets`
-   works. This is the single biggest step to "dead simple".
+The packaging/ergonomics gaps this tutorial originally surfaced are **resolved**
+in the `@freedback/widgets` 1.0 package:
 
-2. **Not an ES module; side-effect-only registration.** The file is an IIFE that
-   calls `customElements.define` as a side effect; its `module.exports` exposes
-   only the *pure helpers*, not the element classes, and there is no ESM `export`.
-   So you can't `import "@freedback/widgets"` cleanly in a bundler. **Fix:** ship
-   an **ESM build** with a side-effect entry (`import "@freedback/widgets"`
-   registers the elements) — keep the IIFE/UMD build for `<script>` users.
+1. **Published npm package.** `@freedback/widgets` (the scope reserved in
+   `docs/naming.md`) ships with `main`/`module`/`exports`/`types`, so
+   `npm add @freedback/widgets` works. ✅
+2. **ESM build + side-effect registration.** `import "@freedback/widgets"`
+   registers the elements; named imports expose the helper + identity API. The
+   IIFE/UMD build still powers the `<script src>` path unchanged. ✅
+3. **Bundled TypeScript types.** A shipped `.d.ts` augments
+   `React.JSX.IntrinsicElements` (React 19), the global `JSX` namespace
+   (React ≤ 18), and `HTMLElementTagNameMap` — zero consumer setup. ✅
+4. **Outcome events.** `freedback:published` / `freedback:error` are dispatched
+   on each widget (see
+   [Outcome events](#outcome-events-freedbackpublished--freedbackerror)). ✅
 
-3. **No TypeScript types shipped.** Consumers must hand-write the JSX
-   augmentation in step 2. **Fix:** ship a `.d.ts` that augments
-   `React.JSX.IntrinsicElements` (and a framework-neutral
-   `HTMLElementTagNameMap`) so TS is zero-config.
+### Still future work
 
-4. **No outcome events.** The widgets surface publish success/failure only as
-   their own DOM text (`.fb-agg` / `.fb-status`); a host app can't observe it.
-   **Fix:** dispatch `freedback:published` and `freedback:error` `CustomEvent`s
-   (detail = the annotation / error) so React can do
-   `<freedback-stars onPublished={…}>`-style handling (via a ref or a thin
-   wrapper). This is the main *functional* ergonomics gap.
-
-5. **Optional thin React wrapper.** Even with the above, a `@freedback/react`
-   package exposing `<FreedbackStars target=… read=… publish=… sign />` with
-   real props + `onPublished`/`onError` callbacks would be the most idiomatic
-   React surface (camelCase props, typed events) and would hide the
-   custom-element/`data-*` details entirely.
+5. **Optional thin React wrapper.** A separate **`@freedback/react`** package
+   exposing `<FreedbackStars target=… read=… publish=… sign onPublished=… />`
+   with real camelCase props + typed callbacks would be the most idiomatic React
+   surface and would hide the custom-element/`data-*` details entirely. The
+   custom-element + events surface in 1.0 already makes such a wrapper a thin
+   layer; it is deferred, not required.
 
 6. **Minor naming.** `data-read` is overloaded (it accepts either a collection
    `/index` or a feedback `/annotations/`), and read vs. publish are two separate
-   URLs. Consider clearer names (e.g. `data-aggregate` / `data-source`) or a
-   single `data-server` convention with derived paths, when the package API is
-   cut.
+   URLs. Clearer names (e.g. `data-aggregate` / `data-source`) or a single
+   `data-server` convention with derived paths could be cut in a future major.
 
-**Bottom line:** the *runtime* is already React-friendly (config is `data-*`, so
-no wrappers/refs needed). Reaching the dead-simple ideal is mostly a
-**distribution** task — publish `@freedback/widgets` (ESM + `.d.ts`), add the two
-outcome events, and (optionally) a `@freedback/react` wrapper. Until then, the
-CDN-script + types-shim recipe above is the supported path.
+**Bottom line:** the dead-simple ideal — `npm add @freedback/widgets`, `import`,
+drop the tag into `.tsx`, observe the events — works as of 1.0. The only
+remaining stretch goal is the optional `@freedback/react` wrapper.

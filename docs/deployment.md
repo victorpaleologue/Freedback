@@ -98,6 +98,36 @@ It attaches to the GitHub Release for the tag:
 Each archive ships a `.sha256`. `workflow_dispatch` builds the artifacts without
 publishing a Release (smoke test).
 
+### Publishing `@freedback/widgets` to npm (guarded)
+
+The same `release.yml` has a **`publish-npm-widgets`** job that, on a `vN` tag,
+publishes the drop-in widgets as **[`@freedback/widgets`](https://www.npmjs.com/package/@freedback/widgets)**
+(the scope reserved in `docs/naming.md`) so React/any apps can
+`npm add @freedback/widgets`. The job builds the ESM + UMD bundles and the
+bundled `.d.ts` from the canonical `widgets/freedback-widgets.js` via the
+package's `prepublishOnly` hook, then `npm publish --access public`.
+
+It is **guarded**: it runs only when an `NPM_TOKEN` repo secret is present
+(`if: secrets.NPM_TOKEN != ''`). Until the owner enables it, the job is **skipped
+cleanly** and never fails the release. To turn it on (one-time, **outside the
+repo**):
+
+1. **Create the `@freedback` npm org/scope** at <https://www.npmjs.com/org/create>
+   (or reserve the scope under your user). The package name `@freedback/widgets`
+   needs the `@freedback` scope to exist and be owned by the publishing account.
+   (The unscoped name `freedback` is taken by an unrelated dormant package —
+   `docs/naming.md`.)
+2. **Mint an automation token** (npm → Access Tokens → *Granular*/*Automation*,
+   with publish rights to `@freedback/*`).
+3. **Add it as a repo secret** named **`NPM_TOKEN`** (GitHub → Settings →
+   Secrets and variables → Actions → New repository secret).
+
+Then any `git tag vX.Y.Z && git push origin vX.Y.Z` publishes the widgets at that
+version. npm rejects re-publishing an already-published version, so bump the
+workspace version before re-tagging. The `<script>`/CDN path
+(`https://freedback.net/widgets/freedback-widgets.js`, served by Pages) keeps
+working independently of npm.
+
 ## TLS
 
 The servers speak HTTP/1.1. Terminate TLS at a reverse proxy (Caddy/Traefik) in
@@ -145,4 +175,5 @@ These steps are **outside the repo** and must be done by the domain owner:
   demand), so the Dockerfile can't silently rot.
 - `pages.yml` — publishes the static artifacts from `main`.
 - `release.yml` — on a `v*` tag, publishes the musl binaries + wasm package to
-  the GitHub Release.
+  the GitHub Release, and (guarded on `NPM_TOKEN`) publishes `@freedback/widgets`
+  to npm.

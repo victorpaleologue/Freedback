@@ -1,6 +1,113 @@
 // Node unit tests for the pure widget helpers (no DOM needed).
 // Run: node widgets/test.cjs   (Node 18+ for the WebCrypto signing test)
 const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
+
+// The canonical source is CommonJS (sets `module.exports`), but the package is
+// `"type": "module"`, so a plain `require("./freedback-widgets.js")` would have
+// Node classify the `.js` as ESM and find no exports. We instead compile the
+// source as CommonJS in THIS realm (via `new Function`, not `vm` — so emitted
+// Arrays/Objects share the test's prototypes and `deepStrictEqual` works) while
+// faking a minimal DOM. This test (a) keeps testing the EXACT canonical file the
+// `<script>` path ships, and (b) also exercises the custom-element registration
+// + the `freedback:published` / `freedback:error` outcome events (eventsTest).
+function loadWidgets() {
+  const src = fs.readFileSync(path.join(__dirname, "freedback-widgets.js"), "utf8");
+  // A tiny synchronous DOM stub: enough for `customElements.define`, element
+  // construction, attribute access, querySelector returning inert stubs, and
+  // CustomEvent dispatch. No network — submit() is driven directly in the test.
+  const defined = {};
+  function makeNode() {
+    return {
+      _attrs: {},
+      _listeners: {},
+      innerHTML: "",
+      textContent: "",
+      children: [],
+      setAttribute(k, v) {
+        this._attrs[k] = String(v);
+      },
+      getAttribute(k) {
+        return k in this._attrs ? this._attrs[k] : null;
+      },
+      hasAttribute(k) {
+        return k in this._attrs;
+      },
+      querySelector() {
+        return makeNode();
+      },
+      querySelectorAll() {
+        return [];
+      },
+      appendChild(c) {
+        this.children.push(c);
+        return c;
+      },
+      addEventListener(type, fn) {
+        (this._listeners[type] ||= []).push(fn);
+      },
+      removeEventListener(type, fn) {
+        this._listeners[type] = (this._listeners[type] || []).filter((f) => f !== fn);
+      },
+      dispatchEvent(ev) {
+        for (const fn of this._listeners[ev.type] || []) fn(ev);
+        return true;
+      },
+    };
+  }
+  class HTMLElement {
+    constructor() {
+      Object.assign(this, makeNode());
+    }
+  }
+  class CustomEvent {
+    constructor(type, init) {
+      this.type = type;
+      this.detail = (init || {}).detail;
+      this.bubbles = !!(init || {}).bubbles;
+      this.composed = !!(init || {}).composed;
+    }
+  }
+  // A swappable fetch stub: tests set `state.__fetch` to control responses.
+  const state = { __fetch: null };
+  const fetchStub = (...args) =>
+    state.__fetch
+      ? state.__fetch(...args)
+      : Promise.reject(new Error("no fetch stub installed"));
+  const mod = { exports: {} };
+  // Inject the fake-DOM + CJS env as locals of the wrapped source (same realm).
+  // Globals the source needs but we DON'T shadow (crypto, TextEncoder/Decoder)
+  // fall through to Node's real globals. `window` is intentionally not injected,
+  // so the `window.Freedback` branch is skipped (the test uses module.exports);
+  // `typeof window` stays safe because it's only read inside a `typeof` guard.
+  const wrapper = new Function(
+    "module",
+    "exports",
+    "HTMLElement",
+    "CustomEvent",
+    "customElements",
+    "document",
+    "fetch",
+    "btoa",
+    "atob",
+    src + "\n//# sourceURL=freedback-widgets.js"
+  );
+  wrapper(
+    mod,
+    mod.exports,
+    HTMLElement,
+    CustomEvent,
+    { define: (n, c) => (defined[n] = c) },
+    { createElement: () => makeNode() },
+    fetchStub,
+    (s) => Buffer.from(s, "binary").toString("base64"),
+    (s) => Buffer.from(s, "base64").toString("binary")
+  );
+  return { exports: mod.exports, defined, state, CustomEvent, makeNode };
+}
+
+const widgets = loadWidgets();
 const {
   baseAnnotation,
   canonicalContent,
@@ -18,7 +125,7 @@ const {
   wrapIdentity,
   unwrapIdentity,
   buildRotationLink,
-} = require("./freedback-widgets.js");
+} = widgets.exports;
 
 // baseAnnotation emits the W3C wire shape.
 const star = baseAnnotation("assessing", "https://ex/1", starBody(4));
@@ -230,9 +337,65 @@ async function identityTest() {
   );
 }
 
+// --- outcome events (gap #4) ----------------------------------------------
+// submit() dispatches `freedback:published` on success (detail = the server
+// response + the sent annotation) and `freedback:error` on failure (detail =
+// the error), additively to the existing `.fb-agg`/`.fb-status` DOM behavior.
+// We drive the registered <freedback-stars> class directly with a stubbed fetch
+// (no DOM environment beyond the sandbox stub; the helper path is also covered
+// above). data-sign is off, so the OAuth/anonymous publish path is exercised.
+async function eventsTest() {
+  const Stars = widgets.defined["freedback-stars"];
+  assert.ok(Stars, "custom elements registered in the sandbox");
+
+  // 1) Success: a 200 publish must fire freedback:published with the response.
+  const sent = [];
+  widgets.state.__fetch = (url, opts) => {
+    sent.push({ url, body: JSON.parse(opts.body) });
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: "urn:stored:1", stored: true }),
+    });
+  };
+  const okEl = new Stars();
+  okEl.setAttribute("data-target", "https://example.com/item/ev");
+  okEl.setAttribute("data-publish", "https://feedback.example/annotations/");
+  // refresh() early-returns without data-read, so no extra fetch is needed.
+  let published = null;
+  let erroredOnOk = false;
+  okEl.addEventListener("freedback:published", (e) => (published = e.detail));
+  okEl.addEventListener("freedback:error", () => (erroredOnOk = true));
+
+  await okEl.submit("assessing", starBody(5));
+  assert.ok(published, "freedback:published fired on a successful publish");
+  assert.strictEqual(published.response.id, "urn:stored:1", "detail carries the server response");
+  assert.strictEqual(published.annotation.type, "Annotation", "detail carries the sent annotation");
+  assert.strictEqual(published.annotation.body[0]["schema:ratingValue"], 5);
+  assert.ok(!erroredOnOk, "no error event on success");
+  assert.strictEqual(sent.length, 1, "exactly one publish POST");
+
+  // 2) Failure: a non-OK publish must fire freedback:error with the error.
+  widgets.state.__fetch = () =>
+    Promise.resolve({ ok: false, status: 401, text: () => Promise.resolve("nope") });
+  const badEl = new Stars();
+  badEl.setAttribute("data-target", "https://example.com/item/ev");
+  badEl.setAttribute("data-publish", "https://feedback.example/annotations/");
+  let errored = null;
+  let publishedOnErr = false;
+  badEl.addEventListener("freedback:error", (e) => (errored = e.detail));
+  badEl.addEventListener("freedback:published", () => (publishedOnErr = true));
+
+  await badEl.submit("assessing", starBody(1));
+  assert.ok(errored && errored.error, "freedback:error fired on a failed publish");
+  assert.match(String(errored.error.message), /publish failed: 401/, "detail carries the error");
+  assert.ok(!publishedOnErr, "no published event on failure");
+}
+
 signingTest()
   .then(identityTest)
-  .then(() => console.log("widgets: all helper + JCS + signing + identity tests passed"))
+  .then(eventsTest)
+  .then(() => console.log("widgets: all helper + JCS + signing + identity + event tests passed"))
   .catch((e) => {
     console.error(e);
     process.exit(1);

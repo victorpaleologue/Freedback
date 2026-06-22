@@ -1,15 +1,67 @@
 {
-  "name": "freedback-widgets",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Freedback drop-in widgets (component 3) — vanilla Web Components, plus a headless-browser E2E harness.",
+  "name": "@freedback/widgets",
+  "version": "1.0.0",
+  "description": "Freedback drop-in feedback widgets — dependency-free W3C Web Annotation custom elements (stars, thumb, scalar, comment, tag) for any framework or plain HTML.",
   "license": "Apache-2.0",
+  "type": "module",
+  "author": "Freedback contributors",
+  "homepage": "https://freedback.net/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freedback/freedback.git",
+    "directory": "widgets"
+  },
+  "keywords": [
+    "feedback",
+    "web-components",
+    "custom-elements",
+    "web-annotation",
+    "jsonld",
+    "rating",
+    "react",
+    "widget"
+  ],
+  "main": "./dist/freedback-widgets.umd.js",
+  "module": "./dist/freedback-widgets.esm.js",
+  "types": "./freedback-widgets.d.ts",
+  "unpkg": "./dist/freedback-widgets.umd.js",
+  "jsdelivr": "./dist/freedback-widgets.umd.js",
+  "exports": {
+    ".": {
+      "types": "./freedback-widgets.d.ts",
+      "import": "./dist/freedback-widgets.esm.js",
+      "require": "./dist/freedback-widgets.umd.js",
+      "default": "./dist/freedback-widgets.umd.js"
+    },
+    "./freedback-widgets.js": {
+      "types": "./freedback-widgets.d.ts",
+      "default": "./freedback-widgets.js"
+    },
+    "./dist/freedback-widgets.esm.js": "./dist/freedback-widgets.esm.js",
+    "./dist/freedback-widgets.umd.js": "./dist/freedback-widgets.umd.js",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./dist/freedback-widgets.esm.js",
+    "./dist/freedback-widgets.umd.js",
+    "./freedback-widgets.js"
+  ],
+  "files": [
+    "dist/",
+    "freedback-widgets.js",
+    "freedback-widgets.d.ts",
+    "README.md"
+  ],
   "scripts": {
+    "build": "node build.mjs",
     "test": "node test.cjs",
     "test:e2e": "node e2e/run-e2e.cjs",
-    "e2e:install": "playwright install chromium"
+    "e2e:install": "playwright install chromium",
+    "prepack": "node build.mjs",
+    "prepublishOnly": "node build.mjs && node test.cjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.49.1"
+    "@playwright/test": "1.49.1",
+    "esbuild": "^0.25.0"
   }
 }
