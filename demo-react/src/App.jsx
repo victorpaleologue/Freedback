@@ -1,4 +1,5 @@
 import FreedbackWidget from "./FreedbackWidget.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
 
 // Realistic-looking mock endpoints. The in-browser mock backend recognises them
 // by path (/annotations/ for publish, /index for read) — the host is cosmetic,
@@ -45,6 +46,7 @@ function Card({ title, blurb, children, snippet }) {
 export default function App() {
   return (
     <main>
+      <ThemeToggle />
       <header className="hero">
         <p className="home-link">
           <a href="/">← freedback.net</a>

@@ -9,36 +9,12 @@
        widget calls fetch(). Then the canonical shipped widgets. -->
   <script src="/anywhere/mock.js"></script>
   <script src="/widgets/freedback-widgets.js"></script>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font: 16px/1.6 system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1.1rem; color: #1a1a1a; }
-    code { background: #f3f3f3; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; word-break: break-all; }
-    a { color: #0857c3; }
-    h1 { margin-bottom: 0; font-size: 2.1rem; }
-    .sub { color: #555; margin-top: 0.3rem; font-size: 1.1rem; }
-    .banner { margin: 1.2rem 0; padding: 0.7rem 1rem; border-radius: 8px;
-              background: #fff7e6; border: 1px solid #f0d28a; color: #6b4e00; font-size: 0.95rem; }
-    .card { margin: 1.4rem 0; padding: 1rem 1.1rem; border: 1px solid #e3e3e3; border-radius: 10px; }
-    .card h3 { margin: 0 0 0.2rem; }
-    .card .uri { font-size: 0.85rem; color: #555; margin: 0 0 0.6rem; word-break: break-all; }
-    .card .blurb { margin: 0.3rem 0 0.9rem; font-size: 0.96rem; }
-    .widgets { display: flex; flex-direction: column; gap: 0.7rem; }
-    .nav { margin-top: 2.4rem; }
-    footer { margin-top: 2.5rem; color: #555; font-size: 0.92rem; }
-    .fb-chip { display: inline-block; margin: 0 0.25rem 0.25rem 0; padding: 0.1em 0.5em;
-               background: #eef2f9; border-radius: 999px; font-size: 0.85em; }
-    @media (prefers-color-scheme: dark) {
-      body { color: #e8e8e8; background: #15171a; }
-      code { background: #25282c; }
-      a { color: #6ea8fe; }
-      .banner { background: #2a2410; border-color: #5c4d12; color: #e8d48a; }
-      .card { border-color: #2c3036; }
-      .card .uri, .sub, footer { color: #9aa0a6; }
-      .fb-chip { background: #21262d; }
-    }
-  </style>
+  <link rel="stylesheet" href="/freedback.css" />
+  <script src="/theme.js"></script>
 </head>
 <body>
+  <button class="fb-theme-toggle" data-fb-theme-toggle aria-label="Toggle light / dark theme"><span data-fb-theme-icon>🌙</span></button>
+  <main>
   <h1>Annotate anything</h1>
   <p class="sub">Freedback feedback targets are just URIs. Here it attaches
   stars, thumbs, comments and tags to real external resources that host no
@@ -155,5 +131,6 @@
   <footer>
     <p>Source &amp; docs: <a href="https://github.com/victorpaleologue/Freedback">github.com/victorpaleologue/Freedback</a></p>
   </footer>
+  </main>
 </body>
 </html>

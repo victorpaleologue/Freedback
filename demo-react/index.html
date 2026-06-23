@@ -17,6 +17,20 @@
       its window.fetch interceptor from the React entry, before any widget refresh.
     -->
     <script src="/freedback-widgets.js"></script>
+    <!--
+      No-FOUC theme init: apply a pinned theme (set by the in-app toggle, shared
+      localStorage key "fb-theme") BEFORE first paint. With no pinned choice the
+      page follows the OS via prefers-color-scheme (see src/styles.css). Mirrors
+      site/theme.js so /demo/ behaves like the static pages.
+    -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("fb-theme");
+          if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
