@@ -10,52 +10,16 @@
   <!-- 2) Then the canonical drop-in widget script. -->
   <script src="/widgets/freedback-widgets.js"></script>
 
+  <link rel="stylesheet" href="/freedback.css" />
+  <script src="/theme.js"></script>
   <style>
-    :root {
-      --bg: #ffffff; --fg: #1a1a1a; --muted: #555; --card: #f7f7f8;
-      --border: #e2e2e6; --link: #0857c3; --accent: #0857c3;
-      --banner-bg: #fff8e1; --banner-fg: #6b5300; --banner-border: #f0d98a;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #16171a; --fg: #e9e9ec; --muted: #a4a4ad; --card: #202227;
-        --border: #34363d; --link: #6fa8ff; --accent: #6fa8ff;
-        --banner-bg: #2a2410; --banner-fg: #e8d48a; --banner-border: #5a4d1c;
-      }
-    }
-    body {
-      font: 16px/1.6 system-ui, sans-serif; max-width: 48rem;
-      margin: 3rem auto; padding: 0 1rem; color: var(--fg); background: var(--bg);
-    }
-    code { background: var(--card); padding: 0.1em 0.35em; border-radius: 4px; }
-    a { color: var(--link); }
-    h1 { margin-bottom: 0; }
-    h2 { margin-top: 2.5rem; }
-    .sub { color: var(--muted); margin-top: 0.25rem; }
-    ul { padding-left: 1.2rem; }
-    .banner {
-      background: var(--banner-bg); color: var(--banner-fg);
-      border: 1px solid var(--banner-border); border-radius: 8px;
-      padding: 0.75rem 1rem; margin: 1.5rem 0; font-size: 0.95rem;
-    }
-    .q {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0;
-    }
-    .q > label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
-    .q small { color: var(--muted); font-weight: 400; }
-    button {
-      font: inherit; cursor: pointer; color: var(--bg); background: var(--accent);
-      border: none; border-radius: 6px; padding: 0.45rem 0.9rem;
-    }
-    .export-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin: 1rem 0; }
-    .count { color: var(--muted); }
-    footer { margin-top: 3rem; color: var(--muted); font-size: 0.9rem; }
-    /* minimal widget polish */
+    /* Page-specific: ensure the block widgets stack cleanly under each label. */
     freedback-stars, freedback-scalar, freedback-thumb, freedback-comment, freedback-tag { display: block; }
   </style>
 </head>
 <body>
+  <button class="fb-theme-toggle" data-fb-theme-toggle aria-label="Toggle light / dark theme"><span data-fb-theme-icon>🌙</span></button>
+  <main>
   <h1>Collect feedback, without the lock-in</h1>
   <p class="sub">A post-talk feedback form built from drop-in Freedback widgets —
   every response is a W3C Web Annotation you own and can export.</p>
@@ -128,9 +92,9 @@
   <p>Because every answer is a stored annotation, the organiser can take the data
   with them. Export it now:</p>
   <div class="export-row">
-    <button id="export-csv" type="button">Export CSV</button>
-    <button id="export-jsonld" type="button">Export JSON-LD</button>
-    <button id="refresh-count" type="button">Refresh count</button>
+    <button class="fb-btn" id="export-csv" type="button">Export CSV</button>
+    <button class="fb-btn" id="export-jsonld" type="button">Export JSON-LD</button>
+    <button class="fb-btn secondary" id="refresh-count" type="button">Refresh count</button>
     <span class="count" id="count"></span>
   </div>
 
@@ -155,6 +119,7 @@
     <a href="/">← Freedback home</a> &nbsp;·&nbsp;
     <a href="/demo/">Main widget showcase →</a>
   </footer>
+  </main>
 
   <script>
     (function () {

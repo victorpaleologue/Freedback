@@ -5,69 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Freedback — open feedback protocol</title>
   <meta name="description" content="A federated, open protocol for typed feedback on anything with a URI — carried as W3C Web Annotations." />
-  <style>
-    /* Inlined + tiny on purpose: the root is the most-hit URL, so it ships as a
-       single ~3 KB HTML file with no JS, no framework, no external requests.
-       The heavy React showcase lives at /demo/ and is only loaded on click. */
-    :root { color-scheme: light dark; }
-    body { font: 16px/1.6 system-ui, sans-serif; max-width: 44rem; margin: 3rem auto; padding: 0 1.1rem; color: #1a1a1a; }
-    code { background: #f3f3f3; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
-    a { color: #0857c3; }
-    h1 { margin-bottom: 0; font-size: 2.1rem; }
-    .sub { color: #555; margin-top: 0.3rem; font-size: 1.1rem; }
-    ul { padding-left: 1.2rem; }
-    .cta { display: inline-block; margin: 0.4rem 0.6rem 0.4rem 0; padding: 0.6rem 1.1rem;
-           background: #0857c3; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; }
-    .cta.secondary { background: #eef2f9; color: #0857c3; }
-    .demos { list-style: none; padding-left: 0; }
-    .demos li { margin: 0.5rem 0; }
-    footer { margin-top: 2.5rem; color: #555; font-size: 0.92rem; }
-    @media (prefers-color-scheme: dark) {
-      body { color: #e8e8e8; background: #15171a; }
-      code { background: #25282c; }
-      a { color: #6ea8fe; }
-      .cta.secondary { background: #21262d; color: #6ea8fe; }
-      .sub, footer { color: #9aa0a6; }
-    }
-  </style>
+  <link rel="stylesheet" href="/freedback.css" />
+  <script src="/theme.js"></script>
 </head>
 <body>
-  <h1>Freedback</h1>
-  <p class="sub">A federated, open protocol for typed feedback on anything with a
-  URI — carried as W3C Web Annotations.</p>
+  <button class="fb-theme-toggle" data-fb-theme-toggle aria-label="Toggle light / dark theme"><span data-fb-theme-icon>🌙</span></button>
+  <main>
+    <h1>Freedback</h1>
+    <p class="sub">A federated, open protocol for typed feedback on anything with
+    a URI — carried as W3C Web Annotations.</p>
 
-  <p>
-    <a class="cta" href="/demo/">▶ Try the live widgets</a>
-    <a class="cta secondary" href="https://github.com/victorpaleologue/Freedback">Source on GitHub</a>
-  </p>
+    <p>
+      <a class="cta" href="/demo/">▶ Try the live widgets</a>
+      <a class="cta secondary" href="https://github.com/victorpaleologue/Freedback">Source on GitHub</a>
+    </p>
 
-  <h2>See it in action</h2>
-  <ul class="demos">
-    <li><a href="/demo/">Widget showcase</a> — the five drop-in widgets (stars,
-      thumbs, scalar, comments, tags), live against an in-browser mock backend.</li>
-    <li><a href="/anywhere/">Annotate anything</a> — attach feedback to a law, a
-      Wikipedia article, an arbitrary web page (targets are just URIs).</li>
-    <li><a href="/collect/">Collect feedback (data collection)</a> — a portable talk-feedback form you can export to CSV / JSON-LD.</li>
-  </ul>
+    <h2>See it in action</h2>
+    <ul class="demos">
+      <li><a href="/demo/">Widget showcase</a> — the five drop-in widgets (stars,
+        thumbs, scalar, comments, tags), live against an in-browser mock backend.</li>
+      <li><a href="/anywhere/">Annotate anything</a> — attach feedback to a law, a
+        Wikipedia article, an arbitrary web page (targets are just URIs).</li>
+      <li><a href="/collect/">Collect feedback (data collection)</a> — a portable talk-feedback form you can export to CSV / JSON-LD.</li>
+    </ul>
 
-  <h2>What it is</h2>
-  <p>Anyone can attach feedback — stars, scalar ratings, thumbs, comments, tags —
-  to any resource with a URI, publish it to a server they choose, and have it
-  discovered and aggregated across servers. No central gatekeeper. Feedback is
-  signed with a portable key, so it is not locked inside the silo that collected
-  it.</p>
+    <h2>What it is</h2>
+    <p>Anyone can attach feedback — stars, scalar ratings, thumbs, comments, tags —
+    to any resource with a URI, publish it to a server they choose, and have it
+    discovered and aggregated across servers. No central gatekeeper. Feedback is
+    signed with a portable key, so it is not locked inside the silo that collected
+    it.</p>
 
-  <h2>Protocol artifacts (stable URLs)</h2>
-  <ul>
-    <li><a href="/ns/context.jsonld">JSON-LD <code>@context</code></a> — <code>/ns/context.jsonld</code></li>
-    <li><a href="/ns/freedback.ttl">Vocabulary</a> — <code>/ns/freedback.ttl</code> (rating subclasses of <code>schema:Rating</code>)</li>
-    <li><a href="/ns/shapes.ttl">SHACL shapes</a> — <code>/ns/shapes.ttl</code> (all validation lives here)</li>
-    <li><a href="/profile/1">Validation profile</a> — <code>/profile/1</code> (<code>dcterms:conformsTo</code>)</li>
-    <li><a href="/widgets/freedback-widgets.js">Drop-in widget script</a> — <code>/widgets/freedback-widgets.js</code></li>
-  </ul>
+    <h2>Protocol artifacts (stable URLs)</h2>
+    <ul>
+      <li><a href="/ns/context.jsonld">JSON-LD <code>@context</code></a> — <code>/ns/context.jsonld</code></li>
+      <li><a href="/ns/freedback.ttl">Vocabulary</a> — <code>/ns/freedback.ttl</code> (rating subclasses of <code>schema:Rating</code>)</li>
+      <li><a href="/ns/shapes.ttl">SHACL shapes</a> — <code>/ns/shapes.ttl</code> (all validation lives here)</li>
+      <li><a href="/profile/1">Validation profile</a> — <code>/profile/1</code> (<code>dcterms:conformsTo</code>)</li>
+      <li><a href="/widgets/freedback-widgets.js">Drop-in widget script</a> — <code>/widgets/freedback-widgets.js</code></li>
+    </ul>
 
-  <footer>
-    <p>Source &amp; docs: <a href="https://github.com/victorpaleologue/Freedback">github.com/victorpaleologue/Freedback</a></p>
-  </footer>
+    <footer>
+      <p>Source &amp; docs: <a href="https://github.com/victorpaleologue/Freedback">github.com/victorpaleologue/Freedback</a></p>
+    </footer>
+  </main>
 </body>
 </html>
