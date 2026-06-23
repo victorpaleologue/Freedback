@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback — a multi-section questionnaire with live results</title>
+
+  <!-- 1) Install the in-browser fetch mock FIRST (exposes window.FreedbackMock). -->
+  <script src="/questionnaire/mock.js"></script>
+  <!-- 2) Then the canonical drop-in widget script. -->
+  <script src="/widgets/freedback-widgets.js"></script>
+
+  <link rel="stylesheet" href="/freedback.css" />
+  <script src="/theme.js"></script>
+  <style>
+    /* Page-specific: ensure the block widgets stack cleanly under each label. */
+    freedback-stars, freedback-scalar, freedback-thumb, freedback-comment, freedback-tag { display: block; }
+    /* Page-specific: tiny layout for the live results summary. */
+    .results { margin: 0.5rem 0; }
+    .results dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; margin: 0; }
+    .results dt { font-weight: 600; }
+    .results dd { margin: 0; color: var(--fb-muted); }
+    .results .comment { display: block; color: var(--fb-muted); margin: 0.2rem 0; }
+  </style>
+</head>
+<body>
+  <button class="fb-theme-toggle" data-fb-theme-toggle aria-label="Toggle light / dark theme"><span data-fb-theme-icon>🌙</span></button>
+  <main>
+  <h1>Developer-experience questionnaire</h1>
+  <p class="sub">A multi-section survey built entirely from drop-in Freedback
+  widgets — every answer is a W3C Web Annotation you own — with a live, in-browser
+  results summary computed from the collected annotations.</p>
+
+  <div class="banner">
+    <strong>Demo mode.</strong> There is no live server. Responses are handled by
+    an in-browser mock, seeded with a few sample answers. Nothing you submit is
+    sent anywhere — it lives only in this tab until you reload.
+  </div>
+
+  <p>This is the kind of multi-page survey you might build in Google Forms,
+  Typeform, or SurveyMonkey. The difference: here each question is just a small
+  custom element, and each answer is stored as <strong>W3C Web Annotation
+  JSON-LD</strong> (RDF) — portable, queryable, and not locked inside a form silo.
+  Each answer is saved as you go (the widgets publish per-interaction), so there is
+  no single submit button. The questions below target
+  <code>https://survey.example/2026/devx</code>; each question has its own
+  <code>#q-…</code> fragment, so answers never cross-count.</p>
+
+  <h2>About your setup</h2>
+
+  <div class="q">
+    <label>Years of professional development experience <small>(0–10+)</small></label>
+    <freedback-scalar
+      data-target="https://survey.example/2026/devx#q-experience"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-worst="0" data-best="10" data-step="1"
+      data-sign></freedback-scalar>
+  </div>
+
+  <div class="q">
+    <label>How satisfied are you with your current developer tooling?</label>
+    <freedback-stars
+      data-target="https://survey.example/2026/devx#q-tooling-sat"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-stars>
+  </div>
+
+  <h2>The product</h2>
+
+  <div class="q">
+    <label>How smooth was onboarding? <small>(0–10)</small></label>
+    <freedback-scalar
+      data-target="https://survey.example/2026/devx#q-onboarding"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-worst="0" data-best="10" data-step="1"
+      data-sign></freedback-scalar>
+  </div>
+
+  <div class="q">
+    <label>How clear is the documentation?</label>
+    <freedback-stars
+      data-target="https://survey.example/2026/devx#q-docs-clarity"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-stars>
+  </div>
+
+  <div class="q">
+    <label>Would you recommend the product to a colleague?</label>
+    <freedback-thumb
+      data-target="https://survey.example/2026/devx#q-recommend"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-thumb>
+  </div>
+
+  <div class="q">
+    <label>Anything about the product you'd like to call out?</label>
+    <freedback-comment
+      data-target="https://survey.example/2026/devx#q-product-comment"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-comment>
+  </div>
+
+  <h2>What's next</h2>
+
+  <div class="q">
+    <label>Which features would you prioritize? <small>(add one tag at a time)</small></label>
+    <freedback-tag
+      data-target="https://survey.example/2026/devx#q-priorities"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-tag>
+  </div>
+
+  <div class="q">
+    <label>What is the one thing we should build next?</label>
+    <freedback-comment
+      data-target="https://survey.example/2026/devx#q-next-comment"
+      data-read="https://collection.demo.freedback.net/index"
+      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-sign></freedback-comment>
+  </div>
+
+  <h2>Results so far</h2>
+  <p>Because every answer is a stored annotation, you can compute an at-a-glance
+  summary right in the browser. Press <strong>Refresh results</strong> after
+  answering to recompute it from the collected annotations.</p>
+  <div class="export-row">
+    <button class="fb-btn" id="refresh-results" type="button">Refresh results</button>
+  </div>
+  <div class="results" id="results"></div>
+
+  <h2>Take the data with you</h2>
+  <p>The responses are <strong>W3C Web Annotation JSON-LD over RDF</strong>, an open
+  standard — so you can export the whole survey and analyze it anywhere:</p>
+  <div class="export-row">
+    <button class="fb-btn" id="export-csv" type="button">Export CSV</button>
+    <button class="fb-btn" id="export-jsonld" type="button">Export JSON-LD</button>
+    <button class="fb-btn secondary" id="refresh-count" type="button">Refresh count</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <footer>
+    <a href="/">← Freedback home</a> &nbsp;·&nbsp;
+    <a href="/demo/">Main widget showcase →</a>
+  </footer>
+  </main>
+
+  <script>
+    (function () {
+      // ---- shared field extraction (matches site/collect/index.html) --------
+      function fields(ann) {
+        // Pull the first body (these demo questions carry exactly one body each).
+        var body = Array.isArray(ann.body) ? ann.body[0] : ann.body;
+        body = body || {};
+        var type = body.type;
+        var bodyType = Array.isArray(type) ? type.join(" ") : (type || "");
+        var isRating = /Rating/.test(bodyType);
+        var creator = ann.creator && typeof ann.creator === "object" ? ann.creator.id : ann.creator;
+        return {
+          target: ann.target || "",
+          motivation: ann.motivation || "",
+          body_type: bodyType,
+          rating_value: isRating && body["schema:ratingValue"] != null ? body["schema:ratingValue"] : "",
+          worst: isRating && body["schema:worstRating"] != null ? body["schema:worstRating"] : "",
+          best: isRating && body["schema:bestRating"] != null ? body["schema:bestRating"] : "",
+          text: !isRating && body.value != null ? body.value : "",
+          creator: creator || "",
+          created: ann.created || "",
+          id: ann.id || "",
+        };
+      }
+
+      var COLUMNS = ["target", "motivation", "body_type", "rating_value", "worst", "best", "text", "creator", "created", "id"];
+
+      function csvCell(v) {
+        var s = v == null ? "" : String(v);
+        if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+        return s;
+      }
+
+      function buildCsv(rows) {
+        var lines = [COLUMNS.join(",")];
+        rows.forEach(function (ann) {
+          var f = fields(ann);
+          lines.push(COLUMNS.map(function (c) { return csvCell(f[c]); }).join(","));
+        });
+        return lines.join("\r\n");
+      }
+
+      function download(filename, text, mime) {
+        var blob = new Blob([text], { type: mime });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+      }
+
+      function store() {
+        return (window.FreedbackMock && window.FreedbackMock.dump()) || [];
+      }
+
+      // ---- which question is which (mirrors the page + mock targets) --------
+      var BASE = "https://survey.example/2026/devx";
+      var RATING_QUESTIONS = [
+        { target: BASE + "#q-experience", label: "Years of experience", kind: "scalar" },
+        { target: BASE + "#q-tooling-sat", label: "Tooling satisfaction", kind: "star" },
+        { target: BASE + "#q-onboarding", label: "Onboarding smoothness", kind: "scalar" },
+        { target: BASE + "#q-docs-clarity", label: "Docs clarity", kind: "star" },
+      ];
+      var THUMB_QUESTIONS = [
+        { target: BASE + "#q-recommend", label: "Would recommend" },
+      ];
+      var TAG_QUESTIONS = [
+        { target: BASE + "#q-priorities", label: "Feature priorities" },
+      ];
+      var COMMENT_QUESTIONS = [
+        { target: BASE + "#q-product-comment", label: "Product comments" },
+        { target: BASE + "#q-next-comment", label: "What to build next" },
+      ];
+
+      function byTarget(rows) {
+        var map = {};
+        rows.forEach(function (ann) {
+          var t = ann.target || "";
+          (map[t] = map[t] || []).push(ann);
+        });
+        return map;
+      }
+
+      function ratingValues(anns) {
+        return anns
+          .map(function (ann) { return fields(ann).rating_value; })
+          .filter(function (v) { return v !== "" && v != null; })
+          .map(Number)
+          .filter(function (v) { return !isNaN(v); });
+      }
+
+      function texts(anns) {
+        return anns
+          .map(function (ann) { return fields(ann); })
+          .filter(function (f) { return f.text !== "" && f.text != null; });
+      }
+
+      function avg(vals) {
+        if (!vals.length) return null;
+        return vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+      }
+
+      function esc(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function truncate(s, n) {
+        s = String(s);
+        return s.length > n ? s.slice(0, n - 1) + "…" : s;
+      }
+
+      function renderResults() {
+        var rows = store();
+        var map = byTarget(rows);
+        var html = "<dl>";
+
+        // Per rating / scalar / star question: average + count.
+        RATING_QUESTIONS.forEach(function (q) {
+          var vals = ratingValues(map[q.target] || []);
+          var a = avg(vals);
+          var icon = q.kind === "star" ? "★ " : "";
+          var shown = a == null ? "–" : icon + a.toFixed(1);
+          html += "<dt>" + esc(q.label) + "</dt><dd>" + shown + " (" + vals.length + ")</dd>";
+        });
+
+        // Per thumb question: 👍 n / 👎 m.
+        THUMB_QUESTIONS.forEach(function (q) {
+          var vals = ratingValues(map[q.target] || []);
+          var up = vals.filter(function (v) { return v >= 0.5; }).length;
+          html += "<dt>" + esc(q.label) + "</dt><dd>👍 " + up + " · 👎 " + (vals.length - up) + "</dd>";
+        });
+
+        // Tags: top few tags with counts.
+        TAG_QUESTIONS.forEach(function (q) {
+          var counts = {};
+          texts(map[q.target] || []).forEach(function (f) {
+            counts[f.text] = (counts[f.text] || 0) + 1;
+          });
+          var top = Object.keys(counts)
+            .map(function (k) { return { tag: k, n: counts[k] }; })
+            .sort(function (x, y) { return y.n - x.n; })
+            .slice(0, 5)
+            .map(function (e) { return esc(e.tag) + " ×" + e.n; });
+          html += "<dt>" + esc(q.label) + "</dt><dd>" + (top.length ? top.join(", ") : "–") + "</dd>";
+        });
+
+        html += "</dl>";
+
+        // Comments: the most recent 2–3 across the comment questions (truncated).
+        var comments = [];
+        COMMENT_QUESTIONS.forEach(function (q) {
+          texts(map[q.target] || []).forEach(function (f) { comments.push(f); });
+        });
+        comments.sort(function (a, b) {
+          return String(b.created).localeCompare(String(a.created));
+        });
+        if (comments.length) {
+          html += "<p><strong>Latest comments</strong></p>";
+          comments.slice(0, 3).forEach(function (f) {
+            html += '<span class="comment">“' + esc(truncate(f.text, 120)) + '”</span>';
+          });
+        }
+
+        document.getElementById("results").innerHTML = html;
+      }
+
+      function updateCount() {
+        var n = store().length;
+        document.getElementById("count").textContent =
+          n + " response" + (n === 1 ? "" : "s") + " collected so far.";
+      }
+
+      document.getElementById("refresh-results").addEventListener("click", renderResults);
+      document.getElementById("export-csv").addEventListener("click", function () {
+        download("freedback-survey.csv", buildCsv(store()), "text/csv;charset=utf-8");
+      });
+      document.getElementById("export-jsonld").addEventListener("click", function () {
+        download("freedback-survey.jsonld", JSON.stringify(store(), null, 2), "application/ld+json");
+      });
+      document.getElementById("refresh-count").addEventListener("click", updateCount);
+
+      renderResults();
+      updateCount();
+    })();
+  </script>
+</body>
+</html>
