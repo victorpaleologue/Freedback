@@ -58,10 +58,13 @@ is **all web UI** — nothing to install:
 1. **Fly.io — billing.** Add a payment method (Fly **Dashboard → your account →
    Billing**). The configs scale to zero, so a demo costs ~nothing, but Fly
    requires a card on file.
-2. **Fly.io — token.** Create an access token at **<https://fly.io/user/personal_access_tokens>**
-   ("Create access token") and copy it. (A personal/org access token can create
-   apps + deploy; a narrower per-app *deploy token* also works once the apps
-   exist.)
+2. **Fly.io — token.** Create an **account-level** access token at
+   **<https://fly.io/user/personal_access_tokens>** ("Create access token") and
+   copy it. Use this one, not a per-app *deploy token* — a deploy token is
+   scoped to an app that must already exist, which is exactly backwards here
+   (the workflow creates the apps itself on first run). Don't use **Apps →
+   Launch an App** either; that wizard deploys immediately from its own guess
+   at a config and doesn't know about `deploy/fly/*.toml`.
 3. **GitHub — secret.** In the repo, **Settings → Secrets and variables →
    Actions → New repository secret**, name it **`FLY_API_TOKEN`**, paste the
    token.
@@ -72,6 +75,21 @@ Then push to `main` (or **Actions → Deploy (Fly.io) → Run workflow**) and it
 provisions + deploys both apps. The app **names** in the tomls (`freedback-demo`,
 `freedback-discovery`) are global on Fly — if either is taken, change the `app =`
 line in the toml (and `FREEDBACK_BASE_URL`) before the first run.
+
+### Where the deployed URL shows up
+
+Each successful run records a **GitHub Deployment** (via the job's native
+`environment:` block — no extra action or script needed). That surfaces the
+live URL in the usual GitHub places:
+
+- The repo's **main page**, right sidebar → **Environments** (`fly-feedback`,
+  `fly-discovery`) — each links straight to its `https://<app>.fly.dev` URL.
+- The **Environments** tab under repo **Settings**, and the deployment history
+  on any commit/PR that triggered a run.
+
+The URL used is always the guaranteed `https://<app>.fly.dev` host (not a
+branded subdomain), since that resolves immediately after every deploy even
+before `fly certs add` / DNS is set up for a custom domain.
 
 ### Branded subdomains (optional)
 
