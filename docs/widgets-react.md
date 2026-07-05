@@ -153,6 +153,7 @@ function Feedback({ url }: { url: string }) {
 | `data-publish` | to submit | a feedback server's `/annotations/`. Omit for a read-only widget. |
 | `data-sign` | — | **presence** enables self-signed publishing (a per-browser P-256 key in IndexedDB, WebCrypto). Write it as `data-sign=""` in JSX. |
 | `data-token` | — | an OAuth bearer for the app-managed identity instead of `data-sign`. `data-sign` wins if both are set. |
+| `data-license` | — | optional license IRI (e.g. `https://creativecommons.org/licenses/by/4.0/`) set as the published annotation's W3C `rights` property, on both the signed and bearer paths (data licensing, ADR 0022). Omit to fall under the server's default license (`/.well-known/freedback`). |
 | `data-worst` / `data-best` / `data-step` | scalar only | the `<freedback-scalar>` scale. |
 
 ### A reusable wrapper (optional)

@@ -309,6 +309,16 @@ pub struct Annotation {
     /// `dcterms:conformsTo`: pins the validation profile.
     #[serde(rename = "conformsTo", skip_serializing_if = "Option::is_none")]
     pub conforms_to: Option<String>,
+    /// `rights` (the W3C Web Annotation term for `dcterms:rights`): an IRI
+    /// identifying the license the author distributes this feedback under
+    /// (e.g. `https://creativecommons.org/licenses/by/4.0/`). Optional — when
+    /// absent, the annotation is distributed under the serving server's default
+    /// license (advertised in `/.well-known/freedback`, ADR 0022). When present
+    /// it IS content: it participates in the canonical bytes, so the same
+    /// feedback under a different license is a different statement (different
+    /// dedup id, separately signed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rights: Option<String>,
     /// Self-signed identity proof. Excluded from the dedup id and signed bytes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<Signature>,
@@ -327,6 +337,7 @@ impl Annotation {
             target,
             body,
             conforms_to: Some(context::PROFILE_URL.to_string()),
+            rights: None,
             signature: None,
         }
     }
@@ -340,6 +351,12 @@ impl Annotation {
     /// Set the `created` timestamp (ISO 8601 UTC) and return self.
     pub fn with_created(mut self, iso8601: impl Into<String>) -> Self {
         self.created = Some(iso8601.into());
+        self
+    }
+
+    /// Set the `rights` license IRI (data licensing, ADR 0022) and return self.
+    pub fn with_rights(mut self, license_iri: impl Into<String>) -> Self {
+        self.rights = Some(license_iri.into());
         self
     }
 

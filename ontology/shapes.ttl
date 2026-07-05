@@ -43,6 +43,16 @@ freedback:AnnotationShape
         sh:maxCount 1 ;
         sh:datatype xsd:dateTime ;
         sh:message "created must be a single xsd:dateTime" ;
+    ] ;
+    # Data licensing (ADR 0022): `rights` (dcterms:rights) is an OPTIONAL single
+    # license IRI. Adding this constraint is a pure relaxation of the profile —
+    # no previously-valid data carries dcterms:rights, so nothing that validated
+    # before stops validating — which keeps this stable-URL-compatible.
+    sh:property [
+        sh:path dcterms:rights ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "rights must be a single license IRI" ;
     ] .
 
 # --- Star rating: discrete 1..5 ---------------------------------------------

@@ -141,6 +141,54 @@ async fn write_then_delete_roundtrip_with_key_file() {
     assert!(client.read(TARGET, &source).await.unwrap().is_empty());
 }
 
+/// `write --license <IRI>` plumbs the `rights` license through the same
+/// sign → POST → read path (data licensing, ADR 0022): the license is part of
+/// the signed content and must come back intact from the server.
+#[tokio::test]
+async fn write_with_license_roundtrips_rights() {
+    const LICENSE: &str = "https://creativecommons.org/licenses/by/4.0/";
+    let base = spawn_server().await;
+    let client = Client::new(ReqwestTransport::new());
+
+    // Exactly what `freedback write --license <IRI>` builds: rights is set
+    // BEFORE signing, so the signature covers it.
+    let id = Identity::generate();
+    let mut ann = Annotation::new(
+        Motivation::Assessing,
+        Target::Iri(TARGET.into()),
+        vec![Body::star(4.0)],
+    )
+    .with_created("2026-06-21T10:00:00Z")
+    .with_rights(LICENSE)
+    .with_creator(Creator::new(id.issuer_id().unwrap()));
+    id.sign_annotation(&mut ann).unwrap();
+
+    let dest = Dest::Endpoint {
+        point: PublicationPoint::from_server(&base),
+        bearer: None,
+    };
+    let stored = client.write(&ann, &dest).await.unwrap();
+    assert_eq!(
+        stored.rights.as_deref(),
+        Some(LICENSE),
+        "write echoes rights"
+    );
+
+    let read = client
+        .read(
+            TARGET,
+            &Source::Endpoint(CollectionPoint::from_server(&base)),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read.len(), 1);
+    assert_eq!(
+        read[0].rights.as_deref(),
+        Some(LICENSE),
+        "read returns rights"
+    );
+}
+
 #[tokio::test]
 async fn read_from_file_fixture_same_code_path() {
     // Persist an array of annotations to a file, then read via Source::File.

@@ -40,6 +40,7 @@ docker run -p 8080:8080 -e FREEDBACK_BASE_URL=https://feedback.example.org \
 | `FREEDBACK_STORE_PATH` | — | feedback (JSON-Lines snapshot file; in-memory backend) |
 | `FREEDBACK_ROCKSDB_PATH` | — | feedback (durable RocksDB dir; needs the `rocksdb` build) |
 | `FREEDBACK_OAUTH_TOKEN` / `_APP` / `_USER` | — | feedback (one demo bearer token) |
+| `FREEDBACK_DEFAULT_LICENSE` | — | feedback (license IRI advertised as `"license"` in `/.well-known/freedback`; annotations without an explicit `rights` fall under it — ADR 0022) |
 
 ## Storage
 

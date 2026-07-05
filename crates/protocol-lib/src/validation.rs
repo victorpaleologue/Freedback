@@ -21,8 +21,10 @@
 //! `sh:targetClass`, `sh:path`, `sh:minCount`, `sh:maxCount`, `sh:datatype`,
 //! `sh:minInclusive`, `sh:maxInclusive`, `sh:minLength`, `sh:in`,
 //! `sh:lessThanOrEquals` (sibling-property comparison — custom rating scales,
-//! ADR 0009), `sh:message`. Anything else in `shapes.ttl` is ignored
-//! (documented limitation).
+//! ADR 0009), `sh:nodeKind` (the simple kinds `sh:IRI` / `sh:Literal` /
+//! `sh:BlankNode` — used by the `rights` license IRI check, ADR 0022),
+//! `sh:message`. Anything else in `shapes.ttl` is ignored (documented
+//! limitation).
 
 use std::collections::BTreeMap;
 
@@ -319,8 +321,31 @@ fn eval_property(
         .first()
         .and_then(Obj::as_node)
         .map(|head| shapes.rdf_list(head));
+    let node_kind = shapes
+        .objects(ps, &sh("nodeKind"))
+        .first()
+        .and_then(Obj::as_node)
+        .map(str::to_string);
 
     for v in values {
+        // sh:nodeKind (simple kinds only): sh:IRI / sh:Literal / sh:BlankNode.
+        // Combination kinds (sh:IRIOrLiteral, …) are ignored like any other
+        // unsupported component.
+        if let Some(nk) = &node_kind {
+            let ok = if *nk == sh("IRI") {
+                matches!(v, Obj::Node(s) if !s.starts_with("_:"))
+            } else if *nk == sh("Literal") {
+                matches!(v, Obj::Lit { .. })
+            } else if *nk == sh("BlankNode") {
+                matches!(v, Obj::Node(s) if s.starts_with("_:"))
+            } else {
+                true
+            };
+            if !ok {
+                out.push(msg());
+                continue;
+            }
+        }
         if let Some(dt) = &datatype {
             let ok = matches!(v, Obj::Lit { datatype, .. } if datatype == dt);
             if !ok {
@@ -483,6 +508,27 @@ mod tests {
             down.conforms,
             "thumb down should conform: {:?}",
             down.violations
+        );
+    }
+
+    #[test]
+    fn rights_license_iri_conforms() {
+        let out = validate_annotation(
+            &ann_with(Body::star(4.0)).with_rights("https://creativecommons.org/licenses/by/4.0/"),
+        )
+        .unwrap();
+        assert!(out.conforms, "expected conforms, got {:?}", out.violations);
+    }
+
+    #[test]
+    fn non_iri_rights_is_rejected() {
+        let out =
+            validate_annotation(&ann_with(Body::star(4.0)).with_rights("not an iri")).unwrap();
+        assert!(!out.conforms, "a non-IRI rights value must be rejected");
+        assert!(
+            out.violations.iter().any(|m| m.contains("license IRI")),
+            "violation names the rights constraint: {:?}",
+            out.violations
         );
     }
 

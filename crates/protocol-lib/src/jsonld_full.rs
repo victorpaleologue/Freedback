@@ -208,6 +208,49 @@ mod tests {
     }
 
     #[test]
+    fn foreign_vocabulary_rights_survives_full_compaction() {
+        // A third party names the license with its own term bound to
+        // dcterms:rights; compaction against the pinned context (which now
+        // defines `rights`, an additive change) must surface it in the model.
+        let foreign = serde_json::json!({
+            "@context": {
+                "Rating": "http://www.w3.org/ns/oa#Annotation",
+                "about":   { "@id": "http://www.w3.org/ns/oa#hasTarget", "@type": "@id" },
+                "why":     { "@id": "http://www.w3.org/ns/oa#motivatedBy", "@type": "@id" },
+                "by":      { "@id": "http://purl.org/dc/terms/creator", "@type": "@id" },
+                "on":      { "@id": "http://purl.org/dc/terms/created", "@type": "http://www.w3.org/2001/XMLSchema#dateTime" },
+                "license": { "@id": "http://purl.org/dc/terms/rights", "@type": "@id" },
+                "scores":  { "@id": "http://www.w3.org/ns/oa#hasBody", "@type": "@id" },
+                "Stars":   "https://freedback.net/ns#StarRating",
+                "stars":   { "@id": "http://schema.org/ratingValue", "@type": "http://www.w3.org/2001/XMLSchema#double" },
+                "low":     { "@id": "http://schema.org/worstRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
+                "high":    { "@id": "http://schema.org/bestRating", "@type": "http://www.w3.org/2001/XMLSchema#double" },
+                "assessing": "http://www.w3.org/ns/oa#assessing"
+            },
+            "@type": "Rating",
+            "why": "assessing",
+            "by": "did:key:k1",
+            "on": "2026-06-21T10:00:00Z",
+            "license": "https://creativecommons.org/licenses/by/4.0/",
+            "about": "https://example.com/item/1",
+            "scores": { "@type": "Stars", "stars": 4, "low": 1, "high": 5 }
+        });
+
+        let parsed = normalize_full(&foreign).expect("foreign vocab should normalize");
+        assert_eq!(
+            parsed.rights.as_deref(),
+            Some("https://creativecommons.org/licenses/by/4.0/"),
+            "rights must survive the full JSON-LD compaction ingest path"
+        );
+        assert_eq!(
+            dedup_id(&parsed).unwrap(),
+            dedup_id(&canonical().with_rights("https://creativecommons.org/licenses/by/4.0/"))
+                .unwrap(),
+            "a foreign rights term must content-address like the canonical form"
+        );
+    }
+
+    #[test]
     fn compacts_inline_custom_context_to_pinned_terms() {
         let foreign = serde_json::json!({
             "@context": {

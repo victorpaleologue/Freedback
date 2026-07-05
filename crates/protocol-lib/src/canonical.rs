@@ -95,6 +95,88 @@ mod tests {
         assert_eq!(base, dedup_id(&a).unwrap());
     }
 
+    /// The exact RFC 8785 canonical bytes of [`sample`] BEFORE the optional
+    /// `rights` field existed (data licensing, ADR 0022). `rights` is
+    /// `skip_serializing_if = Option::is_none`, so an annotation without a
+    /// license must keep producing these exact bytes — i.e. every existing
+    /// fixture, signature, and dedup id remains valid.
+    const SAMPLE_CANONICAL_WITHOUT_RIGHTS: &str = concat!(
+        r#"{"@context":["http://www.w3.org/ns/anno.jsonld","https://freedback.net/ns/context.jsonld"],"#,
+        r#""body":[{"schema:bestRating":5,"schema:ratingValue":4,"schema:worstRating":1,"#,
+        r#""type":["freedback:StarRating","schema:Rating"]}],"#,
+        r#""conformsTo":"https://freedback.net/profile/1","created":"2026-06-21T10:00:00Z","#,
+        r#""motivation":"assessing","target":"https://example.com/item/1","type":"Annotation"}"#
+    );
+
+    #[test]
+    fn absent_rights_keeps_pre_licensing_canonical_bytes() {
+        let bytes = canonical_bytes(&sample()).unwrap();
+        assert_eq!(
+            std::str::from_utf8(&bytes).unwrap(),
+            SAMPLE_CANONICAL_WITHOUT_RIGHTS,
+            "an annotation without `rights` must canonicalize byte-identically \
+             to the pre-ADR-0022 form (existing dedup ids / signatures stay valid)"
+        );
+    }
+
+    #[test]
+    fn present_rights_is_content_and_changes_the_dedup_id() {
+        let plain = sample();
+        let licensed = sample().with_rights("https://creativecommons.org/licenses/by/4.0/");
+        let bytes = canonical_bytes(&licensed).unwrap();
+        assert!(
+            std::str::from_utf8(&bytes)
+                .unwrap()
+                .contains(r#""rights":"https://creativecommons.org/licenses/by/4.0/""#),
+            "rights participates in the canonical bytes"
+        );
+        assert_ne!(
+            dedup_id(&plain).unwrap(),
+            dedup_id(&licensed).unwrap(),
+            "the same feedback under an explicit license is a different statement"
+        );
+        // And two different licenses are two different statements.
+        let other = sample().with_rights("https://creativecommons.org/publicdomain/zero/1.0/");
+        assert_ne!(dedup_id(&licensed).unwrap(), dedup_id(&other).unwrap());
+    }
+
+    /// Cross-language pin (ADR 0013 + ADR 0022): this exact string is also
+    /// asserted by the widgets' JS canonicalizer over the same licensed content
+    /// (`widgets/test.cjs`, `EXPECTED_CANONICAL_LICENSED`). If the two diverge,
+    /// a license set in the browser would break signature verification here.
+    #[test]
+    fn licensed_widget_content_canonical_bytes() {
+        let ann = sample()
+            .with_creator(crate::model::Creator::new("urn:freedback:key:abc"))
+            .with_rights("https://creativecommons.org/licenses/by/4.0/");
+        let expected = concat!(
+            r#"{"@context":["http://www.w3.org/ns/anno.jsonld","https://freedback.net/ns/context.jsonld"],"#,
+            r#""body":[{"schema:bestRating":5,"schema:ratingValue":4,"schema:worstRating":1,"#,
+            r#""type":["freedback:StarRating","schema:Rating"]}],"#,
+            r#""conformsTo":"https://freedback.net/profile/1","created":"2026-06-21T10:00:00Z","#,
+            r#""creator":{"id":"urn:freedback:key:abc"},"motivation":"assessing","#,
+            r#""rights":"https://creativecommons.org/licenses/by/4.0/","#,
+            r#""target":"https://example.com/item/1","type":"Annotation"}"#
+        );
+        let bytes = canonical_bytes(&ann).unwrap();
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected);
+    }
+
+    #[test]
+    fn rights_round_trips_through_serde() {
+        let licensed = sample().with_rights("https://creativecommons.org/licenses/by/4.0/");
+        let json = serde_json::to_value(&licensed).unwrap();
+        assert_eq!(
+            json["rights"],
+            serde_json::json!("https://creativecommons.org/licenses/by/4.0/")
+        );
+        let back: Annotation = serde_json::from_value(json).unwrap();
+        assert_eq!(back, licensed);
+        // …and absence stays absent (no `"rights": null` on the wire).
+        let json = serde_json::to_value(sample()).unwrap();
+        assert!(json.get("rights").is_none());
+    }
+
     #[test]
     fn dedup_id_changes_with_content() {
         let a = sample();

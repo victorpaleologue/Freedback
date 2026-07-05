@@ -634,6 +634,13 @@ pub async fn post_by_id(
 }
 
 /// `GET /.well-known/freedback` — capabilities self-description.
+///
+/// When a default data license is configured (`FREEDBACK_DEFAULT_LICENSE`),
+/// it is surfaced as `"license"`: annotations served here that carry no
+/// explicit `rights` IRI are distributed under that license; an annotation's
+/// own `rights` always takes precedence (data licensing, ADR 0022). This makes
+/// the licensing terms discoverable at a designated endpoint — contractually
+/// valuable for both collectors and publishers (2014 whitebook).
 pub async fn well_known(State(state): State<AppState>) -> Json<Value> {
     let mut doc = json!({
         "version": env!("CARGO_PKG_VERSION"),
@@ -651,6 +658,11 @@ pub async fn well_known(State(state): State<AppState>) -> Json<Value> {
     // registry can corroborate a signed announce against it.
     if let Some(key) = &state.server_key_pem {
         doc["key"] = json!(key);
+    }
+    // The default data license for annotations without an explicit `rights`
+    // (ADR 0022). Omitted entirely when unconfigured.
+    if let Some(license) = &state.default_license {
+        doc["license"] = json!(license);
     }
     Json(doc)
 }

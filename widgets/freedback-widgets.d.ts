@@ -28,6 +28,13 @@ export interface FreedbackDataAttributes {
    * `data-sign` wins if both are set.
    */
   "data-token"?: string;
+  /**
+   * Optional license IRI (e.g. `https://creativecommons.org/licenses/by/4.0/`)
+   * set as the published annotation's W3C `rights` property, on both the
+   * signed and bearer paths (data licensing, ADR 0022). Omit to fall under
+   * the server's default license (`/.well-known/freedback`).
+   */
+  "data-license"?: string;
   /** `<freedback-scalar>` scale: worst value (default 0). */
   "data-worst"?: string | number;
   /** `<freedback-scalar>` scale: best value (default 1). */
@@ -131,6 +138,8 @@ export interface Annotation {
   target: string;
   body: Array<RatingBody | TextualBody>;
   conformsTo: string;
+  /** License IRI the author distributes this feedback under (ADR 0022). */
+  rights?: string;
   signature?: { alg: string; kid: string; sig: string };
 }
 
@@ -190,14 +199,16 @@ export interface FreedbackRotationLink {
 export function baseAnnotation(
   motivation: string,
   target: string,
-  body: RatingBody | TextualBody
+  body: RatingBody | TextualBody,
+  rights?: string
 ): Annotation;
 export function canonicalContent(
   motivation: string,
   target: string,
   body: RatingBody | TextualBody,
   creatorId: string,
-  created: string
+  created: string,
+  rights?: string
 ): Annotation;
 export function jcs(value: unknown): string;
 export function ratingValue(annotation: { body: unknown }): number | null;
@@ -216,7 +227,8 @@ export function buildSignedAnnotation(
   target: string,
   body: RatingBody | TextualBody,
   identity: FreedbackIdentity,
-  created?: string
+  created?: string,
+  rights?: string
 ): Promise<Annotation>;
 export function deleteDocument(dedupId: string, created?: string): DeleteDocument;
 export function buildSignedDelete(

@@ -38,6 +38,7 @@
     "creator": { "@id": "dcterms:creator", "@type": "@id" },
     "created": { "@id": "dcterms:created", "@type": "xsd:dateTime" },
     "conformsTo": { "@id": "dcterms:conformsTo", "@type": "@id" },
+    "rights": { "@id": "dcterms:rights", "@type": "@id" },
 
     "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
 

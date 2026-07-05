@@ -62,6 +62,12 @@ pub fn from_jsonld(doc: &Value) -> Result<Annotation> {
     if let Some(ct) = get(obj, &["conformsTo", "dcterms:conformsTo"]).and_then(Value::as_str) {
         ann.conforms_to = Some(ct.to_string());
     }
+    // Data licensing (ADR 0022): the anno-context `rights` term (dcterms:rights)
+    // is content and must survive ingest. Accept the compact string form and the
+    // `{"id"/"@id": …}` node-object form JSON-LD allows for an @id-typed term.
+    if let Some(r) = get(obj, &["rights", "dcterms:rights"]).and_then(iri_value) {
+        ann.rights = Some(r);
+    }
     if let Some(id) = obj
         .get("id")
         .or_else(|| obj.get("@id"))
@@ -78,6 +84,17 @@ pub fn from_jsonld(doc: &Value) -> Result<Annotation> {
 
 fn get<'a>(obj: &'a Map<String, Value>, aliases: &[&str]) -> Option<&'a Value> {
     aliases.iter().find_map(|k| obj.get(*k))
+}
+
+/// An IRI-valued property: a plain string, or a `{"id"/"@id": "..."}` node.
+fn iri_value(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s.clone()),
+        Value::Object(o) => get(o, &["id", "@id"])
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        _ => None,
+    }
 }
 
 /// The local name of a term/IRI: the part after the last `:`/`/`/`#`.
@@ -323,6 +340,38 @@ mod tests {
         });
         let ann = from_jsonld(&doc).unwrap();
         assert!(matches!(ann.body.as_slice(), [Body::Comment { value }] if value == "nice"));
+    }
+
+    #[test]
+    fn rights_survives_ingest_in_all_serializations() {
+        const LICENSE: &str = "https://creativecommons.org/licenses/by/4.0/";
+        let licensed = canonical().with_rights(LICENSE);
+
+        // Our own serialization round-trips (signatures keep verifying).
+        let value = serde_json::to_value(&licensed).unwrap();
+        assert_eq!(from_jsonld(&value).unwrap(), licensed);
+
+        // The prefixed-term and node-object serializations JSON-LD allows for
+        // an @id-typed property normalize to the same model → same dedup id.
+        for rights in [
+            serde_json::json!(LICENSE),
+            serde_json::json!({ "id": LICENSE }),
+            serde_json::json!({ "@id": LICENSE }),
+        ] {
+            for key in ["rights", "dcterms:rights"] {
+                let mut variant = serde_json::to_value(&licensed).unwrap();
+                let obj = variant.as_object_mut().unwrap();
+                obj.remove("rights");
+                obj.insert(key.to_string(), rights.clone());
+                let parsed = from_jsonld(&variant).unwrap();
+                assert_eq!(parsed.rights.as_deref(), Some(LICENSE), "{key}: {rights}");
+                assert_eq!(
+                    dedup_id(&parsed).unwrap(),
+                    dedup_id(&licensed).unwrap(),
+                    "equivalent rights serializations must content-address identically"
+                );
+            }
+        }
     }
 
     #[test]

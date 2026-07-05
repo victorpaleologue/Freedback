@@ -19,6 +19,12 @@
  *   - `data-token` → an OAuth bearer (the siloed, non-federating identity).
  * `data-sign` wins when both are present.
  *
+ * Every widget kind also accepts an optional `data-license` attribute: a
+ * license IRI (e.g. https://creativecommons.org/licenses/by/4.0/) set as the
+ * annotation's W3C `rights` property on both the signed and bearer publish
+ * paths (data licensing, ADR 0022). It is part of the signed content. Without
+ * it, feedback falls under the server's default license (well-known).
+ *
  * The native wire format is a W3C Web Annotation; these widgets emit exactly the
  * same shape `freedback-protocol` does in Rust, and the signature is computed
  * over the same JCS bytes the Rust server reconstructs and verifies (ADR 0013).
@@ -54,8 +60,8 @@
     return resp.json();
   }
 
-  function baseAnnotation(motivation, target, body) {
-    return {
+  function baseAnnotation(motivation, target, body, rights) {
+    const ann = {
       "@context": ANNO_CTX,
       type: "Annotation",
       motivation,
@@ -64,6 +70,9 @@
       body: [body],
       conformsTo: PROFILE,
     };
+    // Optional data license (ADR 0022): a license IRI on the W3C `rights` term.
+    if (rights) ann.rights = rights;
+    return ann;
   }
 
   // --- RFC 8785 JCS canonicalization --------------------------------------
@@ -92,9 +101,11 @@
   }
 
   /** The signed content: the model shape minus `id`/`signature` (what Rust
-   *  canonicalizes on verify). Bodies must already be in canonical wire form. */
-  function canonicalContent(motivation, target, body, creatorId, created) {
-    return {
+   *  canonicalizes on verify). Bodies must already be in canonical wire form.
+   *  `rights` (a license IRI, ADR 0022) is content: when present it is part of
+   *  the canonical bytes the signature covers. */
+  function canonicalContent(motivation, target, body, creatorId, created, rights) {
+    const content = {
       "@context": ANNO_CTX,
       type: "Annotation",
       motivation,
@@ -104,6 +115,8 @@
       body: [body],
       conformsTo: PROFILE,
     };
+    if (rights) content.rights = rights;
+    return content;
   }
 
   // --- WebCrypto P-256 self-signed identity --------------------------------
@@ -353,9 +366,10 @@
   }
 
   /** Build a self-signed annotation (detached ES256 over the JCS bytes).
-   *  `created` is overridable so tests can pin a deterministic content. */
-  async function buildSignedAnnotation(motivation, target, body, ident, created) {
-    const content = canonicalContent(motivation, target, body, ident.issuerId, created || new Date().toISOString());
+   *  `created` is overridable so tests can pin a deterministic content;
+   *  `rights` optionally licenses the feedback (ADR 0022). */
+  async function buildSignedAnnotation(motivation, target, body, ident, created, rights) {
+    const content = canonicalContent(motivation, target, body, ident.issuerId, created || new Date().toISOString(), rights);
     const bytes = new TextEncoder().encode(jcs(content));
     const raw = await subtle().sign({ name: "ECDSA", hash: "SHA-256" }, ident.priv, bytes);
     return { ...content, signature: { alg: "ES256", kid: ident.kid, sig: b64url(raw) } };
@@ -457,6 +471,8 @@
     get publishUrl() { return this.getAttribute("data-publish"); }
     get token() { return this.getAttribute("data-token") || undefined; }
     get signing() { return this.hasAttribute("data-sign") && !!subtle(); }
+    /** Optional license IRI set as the annotation's `rights` (ADR 0022). */
+    get license() { return this.getAttribute("data-license") || undefined; }
 
     connectedCallback() {
       this.render();
@@ -488,10 +504,11 @@
         let ann;
         let stored;
         if (this.signing) {
-          ann = await buildSignedAnnotation(motivation, this.target, body, await getIdentity());
+          // data-license rides in the signed content (6th arg; created defaults).
+          ann = await buildSignedAnnotation(motivation, this.target, body, await getIdentity(), undefined, this.license);
           stored = await publish(this.publishUrl, ann);
         } else {
-          ann = baseAnnotation(motivation, this.target, body);
+          ann = baseAnnotation(motivation, this.target, body, this.license);
           stored = await publish(this.publishUrl, ann, this.token);
         }
         // Remember the just-published record's dedup id (the basename of the
