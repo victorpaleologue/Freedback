@@ -18,11 +18,15 @@ Freedback is a federated, open feedback protocol whose native wire format is
 3. **Validation lives ENTIRELY in SHACL** (datatype, bounds, required, reject) —
    `ontology/shapes.ttl`. NEVER put validation in OWL/RDFS (open-world,
    monotonic, infer-only). Pin the profile via `dcterms:conformsTo`.
-4. **Dual identity.** (a) Self-signed ECDSA **P-256** keypair identity
-   (PEM public key = portable issuer id; signed payloads; append-only re-signed
-   edits/deletes) which **federates**. (b) App-managed OAuth identity keyed by
+4. **Dual identity; authorship = ownership.** (a) Self-signed ECDSA **P-256**
+   keypair identity (PEM public key = portable issuer id; signed payloads)
+   which **federates at query time**. (b) App-managed OAuth identity keyed by
    composite `(app_id, user_id)` which creates **local-authority silos** and does
-   **not** federate.
+   **not** federate. The creating identity OWNS the annotation: signed **edits**
+   supersede (`(issuer, target)`, newest wins) and signed **deletes** actually
+   erase — right to be forgotten, ADR 0021. The server keeps only a content-free
+   tombstone (`dedup_id` + proof) so caches/sync propagate the erasure and the
+   id cannot be re-ingested. Readers and caches are never owners.
 5. **Everything in Rust except the web widgets and the Firefox extension** (JS).
    Rust targets native + WASM. WASM = **wasm32-unknown-unknown in a browser
    only** (wasm-bindgen / browser fetch). NOT wasm32-wasi, NOT server-side WASM.
