@@ -159,6 +159,19 @@ impl CollectionPoint {
     }
 }
 
+/// One item of a feedback server's erasure feed (`GET /tombstones`, ADR 0021):
+/// the content-free tombstone of an erased annotation. The authorizing `proof`
+/// the server also returns is intentionally NOT modeled — consumers only need
+/// the erased id and the `deleted_at` cursor position, and keeping the local
+/// copy content-free mirrors the collection server's consumption.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct TombstoneItem {
+    /// The erased annotation's content-addressed dedup id.
+    pub dedup_id: String,
+    /// Unix timestamp of the deletion — the feed's cursor position.
+    pub deleted_at: i64,
+}
+
 /// A point to which annotations are PUBLISHED (POSTed).
 #[derive(Debug, Clone)]
 pub struct PublicationPoint {
@@ -299,6 +312,24 @@ impl<T: Transport> Client<T> {
         parse_annotations(&text)
     }
 
+    /// Pull a feedback server's erasure feed (`GET /tombstones?gt_deleted_at=`,
+    /// ADR 0021): the content-free tombstones with `deleted_at > gt_deleted_at`,
+    /// ordered by `deleted_at` ascending. A pre-erasure server without the
+    /// endpoint answers `404`, surfaced here as [`ClientError::Http`] — callers
+    /// that must tolerate older servers skip on error.
+    pub async fn tombstones(
+        &self,
+        point: &CollectionPoint,
+        gt_deleted_at: i64,
+    ) -> Result<Vec<TombstoneItem>> {
+        let url = tombstones_url(&point.sync_url)?;
+        let text = self
+            .transport
+            .get(&format!("{url}?gt_deleted_at={gt_deleted_at}"))
+            .await?;
+        Ok(serde_json::from_str(&text)?)
+    }
+
     /// Incremental sync against a feedback server's `/sync` cursor.
     pub async fn sync(
         &self,
@@ -351,6 +382,18 @@ fn negentropy_url(sync_url: &str) -> Result<String> {
             "collection point has no /negentropy endpoint",
         ))?;
     Ok(format!("{base}/negentropy"))
+}
+
+/// Derive the `/tombstones` erasure feed from a feedback server's `/sync`
+/// cursor URL (they share a base). Returns `Unsupported` for a collection
+/// point that has no sync cursor (and therefore no tombstone feed).
+fn tombstones_url(sync_url: &str) -> Result<String> {
+    let base = sync_url
+        .strip_suffix("/sync")
+        .ok_or(ClientError::Unsupported(
+            "collection point has no /tombstones feed",
+        ))?;
+    Ok(format!("{base}/tombstones"))
 }
 
 /// Derive the bulk `by-id` endpoint from the collection's annotations URL

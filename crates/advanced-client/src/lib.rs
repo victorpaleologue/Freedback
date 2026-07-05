@@ -15,6 +15,16 @@
 //! ONLY the differing ids — O(diff), not O(all).
 //! [`AdvancedClient::reconcile_full`] is kept as the labeled fallback (a
 //! from-scratch pull) for peers that do not advertise `/negentropy`.
+//!
+//! The local copy also honors **erasure** (ADR 0021): every sync/reconcile pass
+//! additionally pulls the server's `/tombstones?gt_deleted_at=` feed from a
+//! per-server cursor, evicts the erased annotations from the local store, and
+//! remembers the erased ids forever — so no later cursor sync, full pull, or
+//! negentropy backfill (including stale copies arriving from *another* server)
+//! can resurrect a deleted record. The client is a read-only local copy and
+//! never pushes during reconciliation, so guarding ingestion is sufficient.
+//! Servers without the `/tombstones` endpoint (pre-erasure) are skipped
+//! silently.
 
 use freedback_cli_client::{Client, CollectionPoint, ReqwestTransport, Transport};
 use freedback_protocol::{dedup_id, Annotation, Item};
@@ -24,6 +34,15 @@ use thiserror::Error;
 
 const ANNS: TableDefinition<&str, &str> = TableDefinition::new("annotations");
 const CURSORS: TableDefinition<&str, i64> = TableDefinition::new("cursors");
+/// Erased dedup ids (ADR 0021): dedup id -> `deleted_at`. Content-free — the
+/// id plus the deletion instant is all the resurrection guard needs (the
+/// tombstone's `proof` is not stored, matching the collection server).
+/// Additive: databases from before this table exist get it created on open.
+const TOMBSTONES: TableDefinition<&str, i64> = TableDefinition::new("tombstones");
+/// Per-server tombstone-feed resume cursor: server base URL -> highest
+/// `deleted_at` seen (the next pull's `gt_deleted_at`). Additive, like
+/// [`TOMBSTONES`].
+const TOMBSTONE_CURSORS: TableDefinition<&str, i64> = TableDefinition::new("tombstone_cursors");
 
 /// Errors from the advanced client.
 #[derive(Debug, Error)]
@@ -97,11 +116,16 @@ impl LocalStore {
     }
 
     fn init(db: Database) -> Result<Self> {
-        // Ensure tables exist.
+        // Ensure tables exist. Opening a missing table inside a write
+        // transaction creates it, so the erasure tables (ADR 0021) are an
+        // additive migration: local stores from before they existed open
+        // unchanged and simply gain the empty tables.
         let w = db.begin_write().map_err(db_err)?;
         {
             w.open_table(ANNS).map_err(db_err)?;
             w.open_table(CURSORS).map_err(db_err)?;
+            w.open_table(TOMBSTONES).map_err(db_err)?;
+            w.open_table(TOMBSTONE_CURSORS).map_err(db_err)?;
         }
         w.commit().map_err(db_err)?;
         Ok(Self { db })
@@ -109,16 +133,27 @@ impl LocalStore {
 
     /// Insert an annotation if unseen; maintain edit-supersession. Returns true
     /// if newly inserted.
+    ///
+    /// An id this store has seen **erased** (a local tombstone exists, ADR
+    /// 0021) is silently ignored — however the stale copy arrives (cursor
+    /// sync, full pull, negentropy backfill, or another server) — so deleted
+    /// content cannot resurrect locally.
     pub fn upsert(&self, ann: &Annotation) -> Result<bool> {
         let record = Record::from_annotation(ann)?;
         let w = self.db.begin_write().map_err(db_err)?;
         let created;
         {
-            let mut table = w.open_table(ANNS).map_err(db_err)?;
-            if table
+            let tombs = w.open_table(TOMBSTONES).map_err(db_err)?;
+            let erased = tombs
                 .get(record.dedup_id.as_str())
                 .map_err(db_err)?
-                .is_some()
+                .is_some();
+            let mut table = w.open_table(ANNS).map_err(db_err)?;
+            if erased
+                || table
+                    .get(record.dedup_id.as_str())
+                    .map_err(db_err)?
+                    .is_some()
             {
                 created = false;
             } else {
@@ -133,41 +168,82 @@ impl LocalStore {
 
             if created {
                 // Recompute supersession for this (issuer, target) group.
-                let mut group: Vec<Record> = Vec::new();
-                for item in table.iter().map_err(db_err)? {
-                    let (_k, v) = item.map_err(db_err)?;
-                    let r: Record = serde_json::from_str(v.value())?;
-                    if r.issuer == record.issuer && r.target == record.target {
-                        group.push(r);
-                    }
-                }
-                if let Some(live_iat) = group.iter().map(|r| r.iat).max() {
-                    // Highest iat (then highest id) is live; others superseded by it.
-                    let live = group
-                        .iter()
-                        .filter(|r| r.iat == live_iat)
-                        .max_by(|a, b| a.dedup_id.cmp(&b.dedup_id))
-                        .unwrap()
-                        .dedup_id
-                        .clone();
-                    for mut r in group {
-                        let new_sup = if r.dedup_id == live {
-                            None
-                        } else {
-                            Some(live.clone())
-                        };
-                        if r.superseded_by != new_sup {
-                            r.superseded_by = new_sup;
-                            table
-                                .insert(r.dedup_id.as_str(), serde_json::to_string(&r)?.as_str())
-                                .map_err(db_err)?;
-                        }
-                    }
+                let group = group_of(&table, &record.issuer, &record.target)?;
+                for r in supersession_updates(group) {
+                    table
+                        .insert(r.dedup_id.as_str(), serde_json::to_string(&r)?.as_str())
+                        .map_err(db_err)?;
                 }
             }
         }
         w.commit().map_err(db_err)?;
         Ok(created)
+    }
+
+    /// Erase an annotation locally because its server published a tombstone
+    /// (ADR 0021): drop the record (if held) and remember the erased id so no
+    /// later sync, backfill, or reconciliation can resurrect it. Only the id
+    /// and `deleted_at` are kept — content-free, like the feed itself. The
+    /// first tombstone wins (a replay never rewrites `deleted_at`), and a
+    /// tombstone may arrive before the content it erases. Returns true iff an
+    /// annotation was actually removed.
+    pub fn evict(&self, dedup_id: &str, deleted_at: i64) -> Result<bool> {
+        let w = self.db.begin_write().map_err(db_err)?;
+        let removed;
+        {
+            let mut tombs = w.open_table(TOMBSTONES).map_err(db_err)?;
+            if tombs.get(dedup_id).map_err(db_err)?.is_none() {
+                tombs.insert(dedup_id, deleted_at).map_err(db_err)?;
+            }
+            let mut table = w.open_table(ANNS).map_err(db_err)?;
+            let prev: Option<Record> = match table.get(dedup_id).map_err(db_err)? {
+                Some(v) => Some(serde_json::from_str(v.value())?),
+                None => None,
+            };
+            removed = prev.is_some();
+            if let Some(r) = prev {
+                table.remove(dedup_id).map_err(db_err)?;
+                // The erased record may have been the live edit: recompute the
+                // (issuer, target) group so its predecessor becomes live again.
+                let group = group_of(&table, &r.issuer, &r.target)?;
+                for u in supersession_updates(group) {
+                    table
+                        .insert(u.dedup_id.as_str(), serde_json::to_string(&u)?.as_str())
+                        .map_err(db_err)?;
+                }
+            }
+        }
+        w.commit().map_err(db_err)?;
+        Ok(removed)
+    }
+
+    /// Whether this dedup id was erased by a tombstone (ADR 0021).
+    pub fn is_erased(&self, dedup_id: &str) -> Result<bool> {
+        let r = self.db.begin_read().map_err(db_err)?;
+        let table = r.open_table(TOMBSTONES).map_err(db_err)?;
+        Ok(table.get(dedup_id).map_err(db_err)?.is_some())
+    }
+
+    /// The tombstone-feed resume cursor (highest `deleted_at` seen) for a
+    /// server — the next pull's `gt_deleted_at`.
+    pub fn tombstone_cursor(&self, server: &str) -> Result<i64> {
+        let r = self.db.begin_read().map_err(db_err)?;
+        let table = r.open_table(TOMBSTONE_CURSORS).map_err(db_err)?;
+        Ok(table
+            .get(server)
+            .map_err(db_err)?
+            .map(|v| v.value())
+            .unwrap_or(0))
+    }
+
+    fn set_tombstone_cursor(&self, server: &str, deleted_at: i64) -> Result<()> {
+        let w = self.db.begin_write().map_err(db_err)?;
+        {
+            let mut table = w.open_table(TOMBSTONE_CURSORS).map_err(db_err)?;
+            table.insert(server, deleted_at).map_err(db_err)?;
+        }
+        w.commit().map_err(db_err)?;
+        Ok(())
     }
 
     /// Fetch a record by dedup id.
@@ -243,6 +319,53 @@ impl LocalStore {
 
 fn cursor_key(server: &str, target: &str) -> String {
     format!("{server}\n{target}")
+}
+
+/// Collect every record of one `(issuer, target)` edit group.
+fn group_of<T>(table: &T, issuer: &str, target: &str) -> Result<Vec<Record>>
+where
+    T: ReadableTable<&'static str, &'static str>,
+{
+    let mut group = Vec::new();
+    for item in table.iter().map_err(db_err)? {
+        let (_k, v) = item.map_err(db_err)?;
+        let r: Record = serde_json::from_str(v.value())?;
+        if r.issuer == issuer && r.target == target {
+            group.push(r);
+        }
+    }
+    Ok(group)
+}
+
+/// Which records of one `(issuer, target)` group need their `superseded_by`
+/// rewritten so that exactly the record with the highest `(iat, dedup_id)` is
+/// live. Shared by insertion (a newer edit supersedes) and eviction (erasing
+/// the live edit revives its predecessor).
+fn supersession_updates(group: Vec<Record>) -> Vec<Record> {
+    let Some(live_iat) = group.iter().map(|r| r.iat).max() else {
+        return Vec::new();
+    };
+    let live = group
+        .iter()
+        .filter(|r| r.iat == live_iat)
+        .max_by(|a, b| a.dedup_id.cmp(&b.dedup_id))
+        .unwrap()
+        .dedup_id
+        .clone();
+    group
+        .into_iter()
+        .filter_map(|mut r| {
+            let new_sup = if r.dedup_id == live {
+                None
+            } else {
+                Some(live.clone())
+            };
+            (r.superseded_by != new_sup).then(|| {
+                r.superseded_by = new_sup;
+                r
+            })
+        })
+        .collect()
 }
 
 /// Report from a sync.
@@ -361,6 +484,11 @@ impl<T: Transport> AdvancedClient<T> {
     ) -> Result<ReconcileReport> {
         let server = server_base.trim_end_matches('/');
         let point = CollectionPoint::from_server(server);
+
+        // Learn erasures first (ADR 0021), so the reconciliation below diffs
+        // against a local set that already excludes what this server deleted.
+        self.refresh_tombstones(server).await?;
+
         let local = self.store.negentropy_items(target)?;
 
         // Round 0: the client's opening full-range claim.
@@ -423,6 +551,33 @@ impl<T: Transport> AdvancedClient<T> {
         self.pull(server, target, 0, false).await
     }
 
+    /// Pull the server's tombstone feed from the per-server cursor, evict the
+    /// erased annotations from the local store, and advance the cursor (ADR
+    /// 0021). Every sync/reconcile pass calls this, so an erasure propagates
+    /// no later than the next pull against that server. A server without the
+    /// `/tombstones` endpoint (pre-erasure) — or any transport failure — is
+    /// skipped silently: older servers must not break sync. Returns how many
+    /// annotations were evicted.
+    async fn refresh_tombstones(&self, server: &str) -> Result<usize> {
+        let point = CollectionPoint::from_server(server);
+        let cursor = self.store.tombstone_cursor(server)?;
+        let Ok(tombs) = self.client.tombstones(&point, cursor).await else {
+            return Ok(0);
+        };
+        let mut evicted = 0;
+        let mut max = cursor;
+        for t in &tombs {
+            if self.store.evict(&t.dedup_id, t.deleted_at)? {
+                evicted += 1;
+            }
+            max = max.max(t.deleted_at);
+        }
+        if max > cursor {
+            self.store.set_tombstone_cursor(server, max)?;
+        }
+        Ok(evicted)
+    }
+
     async fn pull(
         &self,
         server: &str,
@@ -431,6 +586,10 @@ impl<T: Transport> AdvancedClient<T> {
         latest_edits_only: bool,
     ) -> Result<SyncReport> {
         let point = CollectionPoint::from_server(server);
+
+        // The same pass also consumes the server's erasure feed (ADR 0021).
+        self.refresh_tombstones(server).await?;
+
         let fetched = self
             .client
             .sync(&point, target, gt_iat, latest_edits_only)
@@ -485,5 +644,44 @@ mod tests {
         assert_eq!(live[0].iat, 200);
         // Both rows exist; the predecessor is marked superseded.
         assert_eq!(store.records().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn evict_removes_guards_and_revives_predecessor() {
+        let store = LocalStore::in_memory().unwrap();
+        let v1 = ann("t", "k1", "1970-01-01T00:01:40Z", 3.0); // iat 100
+        let v2 = ann("t", "k1", "1970-01-01T00:03:20Z", 5.0); // iat 200 (edit)
+        store.upsert(&v1).unwrap();
+        store.upsert(&v2).unwrap();
+        let id2 = dedup_id(&v2).unwrap();
+
+        // Evicting the live edit removes it and revives the predecessor.
+        assert!(store.evict(&id2, 300).unwrap());
+        assert!(store.is_erased(&id2).unwrap());
+        assert!(store.get(&id2).unwrap().is_none());
+        let live = store.live_by_target("t").unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].iat, 100, "the predecessor is live again");
+
+        // A stale copy of the erased annotation cannot resurrect.
+        assert!(!store.upsert(&v2).unwrap());
+        assert!(store.get(&id2).unwrap().is_none());
+        assert_eq!(store.records().unwrap().len(), 1);
+
+        // Idempotent: replaying the tombstone removes nothing further.
+        assert!(!store.evict(&id2, 999).unwrap());
+    }
+
+    #[test]
+    fn tombstone_may_precede_content() {
+        let store = LocalStore::in_memory().unwrap();
+        let v1 = ann("t", "k1", "1970-01-01T00:01:40Z", 3.0);
+        let id1 = dedup_id(&v1).unwrap();
+
+        // The erasure arrives before the content it erases.
+        assert!(!store.evict(&id1, 50).unwrap(), "nothing to remove yet");
+        assert!(store.is_erased(&id1).unwrap());
+        assert!(!store.upsert(&v1).unwrap(), "late content stays out");
+        assert!(store.records().unwrap().is_empty());
     }
 }
