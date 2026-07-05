@@ -5,9 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Freedback — a portable talk-feedback form</title>
 
-  <!-- 1) Install the in-browser fetch mock FIRST (exposes window.FreedbackMock). -->
-  <script src="/collect/mock.js"></script>
-  <!-- 2) Then the canonical drop-in widget script. -->
+  <!-- The canonical drop-in widget script. No mock here: every widget points
+       at a real, live Freedback server. -->
   <script src="/widgets/freedback-widgets.js"></script>
 
   <link rel="stylesheet" href="/freedback.css" />
@@ -25,9 +24,12 @@
   every response is a W3C Web Annotation you own and can export.</p>
 
   <div class="banner">
-    <strong>Demo mode.</strong> There is no live server. Responses are handled by
-    an in-browser mock, seeded with a few sample answers. Nothing you submit is
-    sent anywhere — it lives only in this tab until you reload.
+    <strong>This is not a mock.</strong> This form publishes to a live Freedback
+    demo server — everything you submit is <em>public</em>. Your answers are
+    signed by a key generated in <em>your</em> browser, and you can delete them
+    (the ×): the right to erasure, implemented. Storage is ephemeral (it may
+    reset), and the first load after idle can take a few seconds while the
+    server wakes.
   </div>
 
   <p>This is the kind of form people normally build in Google Forms, Typeform, or
@@ -46,46 +48,51 @@
     <label for="">Overall, how would you rate this talk? <small>(0–10)</small></label>
     <freedback-scalar
       data-target="https://talks.example/2026/rdf-in-the-browser#q-overall"
-      data-read="https://collection.demo.freedback.net/index"
-      data-publish="https://feedback.demo.freedback.net/annotations/"
+      data-read="https://freedback-demo.fly.dev/annotations/"
+      data-publish="https://freedback-demo.fly.dev/annotations/"
       data-worst="0" data-best="10" data-step="1"
-      data-sign></freedback-scalar>
+      data-sign
+      data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-scalar>
   </div>
 
   <div class="q">
     <label>How clear was the delivery?</label>
     <freedback-stars
       data-target="https://talks.example/2026/rdf-in-the-browser#q-clarity"
-      data-read="https://collection.demo.freedback.net/index"
-      data-publish="https://feedback.demo.freedback.net/annotations/"
-      data-sign></freedback-stars>
+      data-read="https://freedback-demo.fly.dev/annotations/"
+      data-publish="https://freedback-demo.fly.dev/annotations/"
+      data-sign
+      data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-stars>
   </div>
 
   <div class="q">
     <label>Would you recommend it?</label>
     <freedback-thumb
       data-target="https://talks.example/2026/rdf-in-the-browser#q-recommend"
-      data-read="https://collection.demo.freedback.net/index"
-      data-publish="https://feedback.demo.freedback.net/annotations/"
-      data-sign></freedback-thumb>
+      data-read="https://freedback-demo.fly.dev/annotations/"
+      data-publish="https://freedback-demo.fly.dev/annotations/"
+      data-sign
+      data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-thumb>
   </div>
 
   <div class="q">
     <label>What could be improved?</label>
     <freedback-comment
       data-target="https://talks.example/2026/rdf-in-the-browser#q-comments"
-      data-read="https://collection.demo.freedback.net/index"
-      data-publish="https://feedback.demo.freedback.net/annotations/"
-      data-sign></freedback-comment>
+      data-read="https://freedback-demo.fly.dev/annotations/"
+      data-publish="https://freedback-demo.fly.dev/annotations/"
+      data-sign
+      data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-comment>
   </div>
 
   <div class="q">
     <label>Topics you'd want next time</label>
     <freedback-tag
       data-target="https://talks.example/2026/rdf-in-the-browser#q-tags"
-      data-read="https://collection.demo.freedback.net/index"
-      data-publish="https://feedback.demo.freedback.net/annotations/"
-      data-sign></freedback-tag>
+      data-read="https://freedback-demo.fly.dev/annotations/"
+      data-publish="https://freedback-demo.fly.dev/annotations/"
+      data-sign
+      data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-tag>
   </div>
 
   <h2>Collected responses</h2>
@@ -174,25 +181,74 @@
         setTimeout(function () { URL.revokeObjectURL(url); }, 0);
       }
 
-      function store() {
-        return (window.FreedbackMock && window.FreedbackMock.dump()) || [];
+      // ---- live data source ------------------------------------------------
+      // Each question is its own target on the live demo server; responses are
+      // fetched per target and concatenated. Only the first page of each
+      // collection is read — plenty for a demo (a production exporter would
+      // follow the OrderedCollectionPage `next` links).
+      var ENDPOINT = "https://freedback-demo.fly.dev/annotations/";
+      var BASE = "https://talks.example/2026/rdf-in-the-browser";
+      var QUESTION_TARGETS = [
+        BASE + "#q-overall",
+        BASE + "#q-clarity",
+        BASE + "#q-recommend",
+        BASE + "#q-comments",
+        BASE + "#q-tags",
+      ];
+
+      function fetchTarget(target) {
+        return fetch(ENDPOINT + "?target=" + encodeURIComponent(target), {
+          headers: { accept: "application/ld+json" },
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error("read failed: " + resp.status);
+          return resp.json();
+        }).then(function (doc) {
+          // The server answers with an OrderedCollectionPage (`items`); a bare
+          // array is accepted too, mirroring the widgets' fetchAnnotations.
+          if (Array.isArray(doc)) return doc;
+          return Array.isArray(doc.items) ? doc.items : [];
+        });
       }
 
-      function updateCount() {
-        var n = store().length;
-        document.getElementById("count").textContent =
-          n + " response" + (n === 1 ? "" : "s") + " collected so far.";
+      function fetchAllResponses() {
+        return Promise.all(QUESTION_TARGETS.map(fetchTarget)).then(function (lists) {
+          return [].concat.apply([], lists);
+        });
+      }
+
+      var countEl = document.getElementById("count");
+
+      function showError() {
+        countEl.textContent = "Could not reach the live demo server — it may be " +
+          "waking from idle; try again in a few seconds.";
+      }
+
+      function showCount(rows) {
+        var n = rows.length;
+        countEl.textContent = n + " response" + (n === 1 ? "" : "s") + " collected so far.";
+        return rows;
+      }
+
+      function refreshCount() {
+        countEl.textContent = "Fetching responses…";
+        fetchAllResponses().then(showCount).catch(showError);
       }
 
       document.getElementById("export-csv").addEventListener("click", function () {
-        download("freedback-responses.csv", buildCsv(store()), "text/csv;charset=utf-8");
+        countEl.textContent = "Fetching responses…";
+        fetchAllResponses().then(showCount).then(function (rows) {
+          download("freedback-responses.csv", buildCsv(rows), "text/csv;charset=utf-8");
+        }).catch(showError);
       });
       document.getElementById("export-jsonld").addEventListener("click", function () {
-        download("freedback-responses.jsonld", JSON.stringify(store(), null, 2), "application/ld+json");
+        countEl.textContent = "Fetching responses…";
+        fetchAllResponses().then(showCount).then(function (rows) {
+          download("freedback-responses.jsonld", JSON.stringify(rows, null, 2), "application/ld+json");
+        }).catch(showError);
       });
-      document.getElementById("refresh-count").addEventListener("click", updateCount);
+      document.getElementById("refresh-count").addEventListener("click", refreshCount);
 
-      updateCount();
+      refreshCount();
     })();
   </script>
 </body>
