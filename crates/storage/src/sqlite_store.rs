@@ -18,7 +18,8 @@ use freedback_protocol::Annotation;
 use rusqlite::Connection;
 
 use crate::{
-    latest_edits, order_records, FeedbackStore, Page, PutOutcome, Query, Record, Result, StoreError,
+    latest_edits, order_records, FeedbackStore, Page, PutOutcome, Query, Record, Result,
+    StoreError, Tombstone,
 };
 
 /// A SQLite-backed store keyed by dedup id.
@@ -52,7 +53,13 @@ impl SqliteStore {
                  raw      TEXT NOT NULL
              );
              CREATE INDEX IF NOT EXISTS idx_target ON annotations (target);
-             CREATE INDEX IF NOT EXISTS idx_target_iat ON annotations (target, iat);",
+             CREATE INDEX IF NOT EXISTS idx_target_iat ON annotations (target, iat);
+             CREATE TABLE IF NOT EXISTS tombstones (
+                 dedup_id   TEXT PRIMARY KEY,
+                 deleted_at INTEGER NOT NULL,
+                 proof      TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_tomb_deleted_at ON tombstones (deleted_at);",
         )
         .map_err(be)?;
         Ok(Self {
@@ -97,6 +104,21 @@ impl FeedbackStore for SqliteStore {
         let record = Record::from_annotation(ann)?;
         let raw = serde_json::to_string(ann)?;
         let conn = self.conn.lock().unwrap();
+        // Erased content stays erased (ADR 0021): a tombstoned id is rejected.
+        let tombstoned: bool = conn
+            .query_row(
+                "SELECT 1 FROM tombstones WHERE dedup_id = ?1",
+                [&record.dedup_id],
+                |_| Ok(true),
+            )
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(false),
+                other => Err(other),
+            })
+            .map_err(be)?;
+        if tombstoned {
+            return Err(StoreError::Tombstoned(record.dedup_id));
+        }
         // INSERT OR IGNORE makes this idempotent by content id (the PRIMARY KEY).
         let changed = conn
             .execute(
@@ -177,6 +199,70 @@ impl FeedbackStore for SqliteStore {
         }
         Ok(records.into_iter().map(|r| r.ann).collect())
     }
+
+    async fn delete(
+        &self,
+        dedup_id: &str,
+        deleted_at: i64,
+        proof: serde_json::Value,
+    ) -> Result<bool> {
+        let proof = serde_json::to_string(&proof)?;
+        let conn = self.conn.lock().unwrap();
+        // First delete wins: OR IGNORE keeps an existing tombstone intact.
+        conn.execute(
+            "INSERT OR IGNORE INTO tombstones (dedup_id, deleted_at, proof)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![dedup_id, deleted_at, proof],
+        )
+        .map_err(be)?;
+        let removed = conn
+            .execute("DELETE FROM annotations WHERE dedup_id = ?1", [dedup_id])
+            .map_err(be)?;
+        Ok(removed == 1)
+    }
+
+    async fn is_tombstoned(&self, dedup_id: &str) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT 1 FROM tombstones WHERE dedup_id = ?1",
+            [dedup_id],
+            |_| Ok(true),
+        )
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            other => Err(other),
+        })
+        .map_err(be)
+    }
+
+    async fn tombstones(&self, gt_deleted_at: i64) -> Result<Vec<Tombstone>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT dedup_id, deleted_at, proof FROM tombstones
+                 WHERE deleted_at > ?1 ORDER BY deleted_at ASC, dedup_id ASC",
+            )
+            .map_err(be)?;
+        let rows = stmt
+            .query_map([gt_deleted_at], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(be)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (dedup_id, deleted_at, proof) = row.map_err(be)?;
+            out.push(Tombstone {
+                dedup_id,
+                deleted_at,
+                proof: serde_json::from_str(&proof)?,
+            });
+        }
+        Ok(out)
+    }
 }
 
 fn be<E: std::fmt::Display>(e: E) -> StoreError {
@@ -191,6 +277,11 @@ mod tests {
     #[tokio::test]
     async fn sqlite_store_conformance() {
         conformance::run(&SqliteStore::in_memory().unwrap()).await;
+    }
+
+    #[tokio::test]
+    async fn sqlite_store_erasure() {
+        conformance::erasure(&SqliteStore::in_memory().unwrap()).await;
     }
 
     #[tokio::test]

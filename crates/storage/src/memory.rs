@@ -6,12 +6,16 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use freedback_protocol::Annotation;
 
-use crate::{latest_edits, order_records, FeedbackStore, Page, PutOutcome, Query, Record, Result};
+use crate::{
+    latest_edits, order_records, order_tombstones, FeedbackStore, Page, PutOutcome, Query, Record,
+    Result, StoreError, Tombstone,
+};
 
 /// A thread-safe in-memory store keyed by dedup id.
 #[derive(Default)]
 pub struct MemoryStore {
     inner: Mutex<HashMap<String, Record>>,
+    tombstones: Mutex<HashMap<String, Tombstone>>,
 }
 
 impl MemoryStore {
@@ -30,10 +34,50 @@ impl FeedbackStore for MemoryStore {
     async fn put(&self, ann: &Annotation) -> Result<PutOutcome> {
         let record = Record::from_annotation(ann)?;
         let dedup_id = record.dedup_id.clone();
+        if self.tombstones.lock().unwrap().contains_key(&dedup_id) {
+            return Err(StoreError::Tombstoned(dedup_id));
+        }
         let mut map = self.inner.lock().unwrap();
         let created = !map.contains_key(&dedup_id);
         map.entry(dedup_id.clone()).or_insert(record);
         Ok(PutOutcome { dedup_id, created })
+    }
+
+    async fn delete(
+        &self,
+        dedup_id: &str,
+        deleted_at: i64,
+        proof: serde_json::Value,
+    ) -> Result<bool> {
+        let mut tombs = self.tombstones.lock().unwrap();
+        if !tombs.contains_key(dedup_id) {
+            tombs.insert(
+                dedup_id.to_string(),
+                Tombstone {
+                    dedup_id: dedup_id.to_string(),
+                    deleted_at,
+                    proof,
+                },
+            );
+        }
+        Ok(self.inner.lock().unwrap().remove(dedup_id).is_some())
+    }
+
+    async fn is_tombstoned(&self, dedup_id: &str) -> Result<bool> {
+        Ok(self.tombstones.lock().unwrap().contains_key(dedup_id))
+    }
+
+    async fn tombstones(&self, gt_deleted_at: i64) -> Result<Vec<Tombstone>> {
+        let mut out: Vec<Tombstone> = self
+            .tombstones
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|t| t.deleted_at > gt_deleted_at)
+            .cloned()
+            .collect();
+        order_tombstones(&mut out);
+        Ok(out)
     }
 
     async fn get(&self, dedup_id: &str) -> Result<Option<Annotation>> {
@@ -100,6 +144,11 @@ mod tests {
     #[tokio::test]
     async fn memory_store_conformance() {
         conformance::run(&MemoryStore::new()).await;
+    }
+
+    #[tokio::test]
+    async fn memory_store_erasure() {
+        conformance::erasure(&MemoryStore::new()).await;
     }
 
     #[tokio::test]

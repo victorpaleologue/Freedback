@@ -13,10 +13,15 @@ use oxigraph::model::{GraphName, Literal, NamedNode, NamedOrBlankNodeRef, Quad, 
 use oxigraph::store::Store;
 
 use crate::{
-    latest_edits, order_records, FeedbackStore, Page, PutOutcome, Query, Record, Result, StoreError,
+    latest_edits, order_records, order_tombstones, FeedbackStore, Page, PutOutcome, Query, Record,
+    Result, StoreError, Tombstone,
 };
 
 const RAW_PRED: &str = "https://freedback.net/ns#raw";
+/// Tombstones live as one quad each: subject `urn:freedback:tombstone:<dedup>`,
+/// this predicate, and the tombstone's JSON as a literal (ADR 0021). Same
+/// pattern as `#raw`, so the durable RocksDB backend persists them for free.
+const TOMBSTONE_PRED: &str = "https://freedback.net/ns#tombstone";
 
 /// An Oxigraph-backed store (in-memory backend).
 pub struct OxigraphStore {
@@ -52,6 +57,36 @@ impl OxigraphStore {
         NamedNode::new_unchecked(RAW_PRED)
     }
 
+    fn tombstone_subject(dedup_id: &str) -> Result<NamedNode> {
+        NamedNode::new(format!("urn:freedback:tombstone:{dedup_id}")).map_err(be)
+    }
+
+    fn tombstone_pred() -> NamedNode {
+        NamedNode::new_unchecked(TOMBSTONE_PRED)
+    }
+
+    /// The stored tombstone for `dedup_id`, if any.
+    fn tombstone_of(&self, dedup_id: &str) -> Result<Option<Tombstone>> {
+        let subj = Self::tombstone_subject(dedup_id)?;
+        let pred = Self::tombstone_pred();
+        if let Some(q) = self
+            .store
+            .quads_for_pattern(
+                Some(NamedOrBlankNodeRef::NamedNode(subj.as_ref())),
+                Some(pred.as_ref()),
+                None,
+                None,
+            )
+            .next()
+        {
+            let q = q.map_err(be)?;
+            if let Term::Literal(l) = q.object {
+                return Ok(Some(serde_json::from_str(l.value())?));
+            }
+        }
+        Ok(None)
+    }
+
     /// Rebuild every record by deserializing the stored raw JSON-LD.
     fn all_records(&self) -> Result<Vec<Record>> {
         let pred = Self::raw_pred();
@@ -74,6 +109,10 @@ impl OxigraphStore {
 impl FeedbackStore for OxigraphStore {
     async fn put(&self, ann: &Annotation) -> Result<PutOutcome> {
         let record = Record::from_annotation(ann)?;
+        // Erased content stays erased (ADR 0021): a tombstoned id is rejected.
+        if self.tombstone_of(&record.dedup_id)?.is_some() {
+            return Err(StoreError::Tombstoned(record.dedup_id));
+        }
         let subj = Self::subject(&record.dedup_id)?;
         let pred = Self::raw_pred();
         let exists = self
@@ -167,6 +206,70 @@ impl FeedbackStore for OxigraphStore {
         }
         Ok(records.into_iter().map(|r| r.ann).collect())
     }
+
+    async fn delete(
+        &self,
+        dedup_id: &str,
+        deleted_at: i64,
+        proof: serde_json::Value,
+    ) -> Result<bool> {
+        // First delete wins: keep an existing tombstone intact.
+        if self.tombstone_of(dedup_id)?.is_none() {
+            let tomb = Tombstone {
+                dedup_id: dedup_id.to_string(),
+                deleted_at,
+                proof,
+            };
+            let quad = Quad::new(
+                Self::tombstone_subject(dedup_id)?,
+                Self::tombstone_pred(),
+                Literal::new_simple_literal(serde_json::to_string(&tomb)?),
+                GraphName::DefaultGraph,
+            );
+            self.store.insert(&quad).map_err(be)?;
+        }
+
+        // Erase the annotation content: remove every quad under its subject.
+        let subj = Self::subject(dedup_id)?;
+        let quads: Vec<Quad> = self
+            .store
+            .quads_for_pattern(
+                Some(NamedOrBlankNodeRef::NamedNode(subj.as_ref())),
+                None,
+                None,
+                None,
+            )
+            .collect::<std::result::Result<_, _>>()
+            .map_err(be)?;
+        let removed = !quads.is_empty();
+        for q in &quads {
+            self.store.remove(q).map_err(be)?;
+        }
+        Ok(removed)
+    }
+
+    async fn is_tombstoned(&self, dedup_id: &str) -> Result<bool> {
+        Ok(self.tombstone_of(dedup_id)?.is_some())
+    }
+
+    async fn tombstones(&self, gt_deleted_at: i64) -> Result<Vec<Tombstone>> {
+        let pred = Self::tombstone_pred();
+        let mut out = Vec::new();
+        for q in self
+            .store
+            .quads_for_pattern(None, Some(pred.as_ref()), None, None)
+        {
+            let q = q.map_err(be)?;
+            if let Term::Literal(l) = q.object {
+                let t: Tombstone = serde_json::from_str(l.value())?;
+                if t.deleted_at > gt_deleted_at {
+                    out.push(t);
+                }
+            }
+        }
+        order_tombstones(&mut out);
+        Ok(out)
+    }
 }
 
 fn be<E: std::fmt::Display>(e: E) -> StoreError {
@@ -181,6 +284,11 @@ mod tests {
     #[tokio::test]
     async fn oxigraph_store_conformance() {
         conformance::run(&OxigraphStore::new().unwrap()).await;
+    }
+
+    #[tokio::test]
+    async fn oxigraph_store_erasure() {
+        conformance::erasure(&OxigraphStore::new().unwrap()).await;
     }
 
     #[tokio::test]
@@ -202,6 +310,13 @@ mod tests {
     async fn rocksdb_store_conformance() {
         let dir = tempfile::tempdir().unwrap();
         conformance::run(&OxigraphStore::open(dir.path()).unwrap()).await;
+    }
+
+    #[cfg(feature = "rocksdb")]
+    #[tokio::test]
+    async fn rocksdb_store_erasure() {
+        let dir = tempfile::tempdir().unwrap();
+        conformance::erasure(&OxigraphStore::open(dir.path()).unwrap()).await;
     }
 
     #[cfg(feature = "rocksdb")]
