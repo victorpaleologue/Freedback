@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Freedback</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="title">Freedback</h1>
+    <button id="nav-back" class="ghost hidden" aria-label="Back">←</button>
+  </header>
+
+  <main id="views">
+
+    <!-- ============================ Home ============================ -->
+    <section id="view-home" class="view">
+      <p class="hint">Scan or enter a barcode (GTIN), an ISBN, or a URL to see
+        and share feedback about anything.</p>
+
+      <form id="resolve-form" class="row">
+        <input id="resolve-input" type="text" autocomplete="off"
+               placeholder="GTIN / ISBN / URL…" aria-label="Barcode, ISBN, or URL" />
+        <button type="submit" class="primary">Look&nbsp;up</button>
+      </form>
+      <p id="resolve-error" class="error hidden"></p>
+
+      <!-- Camera scanning lands with the barcode-scanner plugin (M3). -->
+      <button id="scan-btn" class="secondary" disabled
+              title="Camera scanning arrives with the barcode-scanner plugin">
+        Scan (soon)
+      </button>
+
+      <div class="chips" id="example-chips">
+        <span class="chips-label">Try:</span>
+        <button class="chip" data-example="3017620422003">Nutella (EAN-13)</button>
+        <button class="chip" data-example="978-0-306-40615-7">A book (ISBN)</button>
+        <button class="chip" data-example="https://example.com/item/1">A URL</button>
+      </div>
+
+      <nav class="home-nav">
+        <button id="nav-journal" class="secondary">My feedback</button>
+        <button id="nav-key" class="secondary">My key</button>
+        <button id="nav-settings" class="secondary">Settings</button>
+      </nav>
+    </section>
+
+    <!-- ========================== Feedback ========================== -->
+    <section id="view-feedback" class="view hidden">
+      <p id="fb-target" class="target mono"></p>
+
+      <div class="agg card">
+        <div class="agg-stars">
+          <span id="fb-star-avg" class="big">–</span>
+          <span id="fb-star-count" class="muted"></span>
+        </div>
+        <div class="agg-thumbs">
+          <span id="fb-thumbs-up">👍 0</span>
+          <span id="fb-thumbs-down">👎 0</span>
+        </div>
+      </div>
+
+      <h2>Comments</h2>
+      <ul id="fb-comments" class="items"></ul>
+
+      <h2>Tags</h2>
+      <ul id="fb-tags" class="items tags"></ul>
+
+      <h2>Contribute</h2>
+      <p class="hint">Published under
+        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+        with your local key — no account needed.</p>
+
+      <div class="composer card">
+        <div class="row">
+          <label for="c-stars">Stars</label>
+          <select id="c-stars">
+            <option value="">–</option>
+            <option>1</option><option>2</option><option>3</option>
+            <option>4</option><option>5</option>
+          </select>
+          <button id="c-stars-send" class="primary">Rate</button>
+        </div>
+        <div class="row">
+          <label>Thumb</label>
+          <button id="c-thumb-up" class="secondary">👍</button>
+          <button id="c-thumb-down" class="secondary">👎</button>
+        </div>
+        <div class="row">
+          <input id="c-comment" type="text" placeholder="Write a comment…" />
+          <button id="c-comment-send" class="primary">Comment</button>
+        </div>
+        <div class="row">
+          <input id="c-tag" type="text" placeholder="Add a tag…" />
+          <button id="c-tag-send" class="primary">Tag</button>
+        </div>
+        <div class="row">
+          <!-- TODO(issue-type): enable once Body::Issue lands in the protocol. -->
+          <input id="c-issue" type="text" placeholder="Report an issue… (soon)" disabled />
+          <button id="c-issue-send" class="primary" disabled
+                  title="Issue reports arrive with the issue-type protocol extension">Issue</button>
+        </div>
+      </div>
+      <p id="fb-error" class="error hidden"></p>
+      <p id="fb-ok" class="ok hidden"></p>
+    </section>
+
+    <!-- ========================= My feedback ========================= -->
+    <section id="view-journal" class="view hidden">
+      <p class="hint">Everything you published from this device. Update
+        replaces (new signed write, same key + target); delete erases on the
+        server too — the right to be forgotten.</p>
+      <ul id="journal-list" class="items"></ul>
+      <p id="journal-empty" class="muted hidden">Nothing yet — look something up and rate it!</p>
+      <p id="journal-error" class="error hidden"></p>
+    </section>
+
+    <!-- =========================== My key =========================== -->
+    <section id="view-key" class="view hidden">
+      <p class="hint"><strong>Your key is your account.</strong> It was minted
+        on this device on first use; no signup, no server-side identity.
+        Export it to move or back up your account. Anyone holding this key can
+        publish, edit, and erase as you — keep it private.</p>
+
+      <h2>Export</h2>
+      <textarea id="key-export" class="mono" rows="6" readonly
+                placeholder="Tap Export to reveal your private key"></textarea>
+      <div class="row">
+        <button id="key-export-btn" class="secondary">Export</button>
+        <button id="key-copy-btn" class="secondary">Copy</button>
+      </div>
+
+      <h2>Import</h2>
+      <p class="hint warn">Importing replaces the key on this device. Feedback
+        signed with the old key can no longer be edited or erased from here
+        unless you re-import it.</p>
+      <textarea id="key-import" class="mono" rows="6"
+                placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+      <div class="row">
+        <button id="key-import-btn" class="primary">Import</button>
+      </div>
+      <p id="key-error" class="error hidden"></p>
+      <p id="key-ok" class="ok hidden"></p>
+    </section>
+
+    <!-- =========================== Settings =========================== -->
+    <section id="view-settings" class="view hidden">
+      <h2>Server</h2>
+      <p class="hint">The feedback server this app reads from and publishes to.</p>
+      <div class="row">
+        <input id="settings-server" type="url" class="mono" placeholder="https://freedback-demo.fly.dev" />
+        <button id="settings-save" class="primary">Save</button>
+      </div>
+      <p id="settings-error" class="error hidden"></p>
+      <p id="settings-ok" class="ok hidden"></p>
+    </section>
+
+  </main>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
