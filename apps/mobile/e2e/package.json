@@ -1,0 +1,15 @@
+{
+  "name": "freedback-app-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native UX-path tests for the Freedback app: tauri-driver (WebDriver) drives the REAL desktop binary — webview, IPC commands, Rust core, and a local feedback server together.",
+  "scripts": {
+    "test": "wdio run wdio.conf.cjs"
+  },
+  "devDependencies": {
+    "@wdio/cli": "^9.20.0",
+    "@wdio/local-runner": "^9.20.0",
+    "@wdio/mocha-framework": "^9.20.0",
+    "@wdio/spec-reporter": "^9.20.0"
+  }
+}
