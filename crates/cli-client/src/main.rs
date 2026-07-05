@@ -46,6 +46,14 @@ mod cli {
             thumb: Option<bool>,
             #[arg(long)]
             comment: Option<String>,
+            /// Reuse (or create) a persistent identity instead of a fresh
+            /// throwaway one — load the PKCS#8 PEM keypair from this file if
+            /// it exists, otherwise generate one and save it here. Lets two
+            /// `write` calls act as the SAME issuer (e.g. to supersede an
+            /// earlier post for the same target — the only "edit/delete"
+            /// this append-only protocol supports; see docs/hosting.md).
+            #[arg(long)]
+            key_file: Option<std::path::PathBuf>,
         },
         /// Read aggregated feedback for a target.
         Read {
@@ -77,6 +85,7 @@ mod cli {
                 scalar,
                 thumb,
                 comment,
+                key_file,
             } => {
                 let body = if let Some(v) = stars {
                     Body::star(v)
@@ -97,8 +106,19 @@ mod cli {
                 let now = OffsetDateTime::now_utc().format(&Rfc3339)?;
                 let mut ann =
                     Annotation::new(motivation, Target::Iri(target), vec![body]).with_created(now);
-                // Self-signed identity (ephemeral for the demo CLI).
-                let id = Identity::generate();
+                // Self-signed identity: ephemeral by default, or loaded/saved
+                // from --key-file so repeated invocations share one issuer.
+                let id = match &key_file {
+                    Some(path) if path.exists() => {
+                        Identity::from_pkcs8_pem(&std::fs::read_to_string(path)?)?
+                    }
+                    Some(path) => {
+                        let id = Identity::generate();
+                        std::fs::write(path, id.to_pkcs8_pem()?)?;
+                        id
+                    }
+                    None => Identity::generate(),
+                };
                 ann.creator = Some(freedback_protocol::Creator::new(id.issuer_id()?));
                 id.sign_annotation(&mut ann)?;
 
