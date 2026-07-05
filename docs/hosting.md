@@ -91,6 +91,19 @@ The URL used is always the guaranteed `https://<app>.fly.dev` host (not a
 branded subdomain), since that resolves immediately after every deploy even
 before `fly certs add` / DNS is set up for a custom domain.
 
+### Production smoke test
+
+`.github/workflows/prod-smoke.yml` runs an end-to-end check against the REAL
+deployments — after every successful Fly deploy, weekly, and on demand. It
+verifies the live site (landing page, pinned `@context`, widget script), then
+runs a full lifecycle against the live backend + discovery: publish a signed
+rating with a run-local P-256 key → read it back → `resolve` it through the
+registry → assert a *different* key cannot erase it (403) → erase it with the
+author's key (`DELETE`, ADR 0021) → assert it is gone (empty read, `410 Gone`,
+tombstone listed). The run erases its own data (a trap guarantees cleanup even
+on mid-test failure), so production is left clean. No secrets — deletion is
+authorized by authorship.
+
 ### Branded subdomains (optional)
 
 Point subdomains of `freedback.net` at the apps and set certs:
