@@ -7,7 +7,7 @@
 //! upstream host with a token bucket, dedups across servers by content-addressed
 //! id, and unifies results across **equivalent** URIs.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -49,6 +49,25 @@ impl CacheEntry {
     }
 }
 
+/// Per-upstream erasure state (ADR 0021): the tombstone-feed cursor plus every
+/// dedup id that upstream has erased. Cached copies of those ids are evicted
+/// and never served again.
+#[derive(Default, Clone)]
+pub(crate) struct TombstoneState {
+    /// Highest `deleted_at` seen — the `gt_deleted_at` cursor for the next pull.
+    pub(crate) cursor: i64,
+    /// Every erased dedup id learned from this upstream.
+    pub(crate) ids: HashSet<String>,
+}
+
+/// One item of an upstream `GET /tombstones` response (the content-free
+/// tombstone; the `proof` is not needed here and is ignored).
+#[derive(Deserialize)]
+struct TombstoneItem {
+    dedup_id: String,
+    deleted_at: i64,
+}
+
 /// Rate-limit configuration.
 #[derive(Clone, Copy)]
 pub struct RateLimit {
@@ -71,6 +90,8 @@ impl Default for RateLimit {
 pub struct AppState {
     servers: Arc<Mutex<BTreeSet<String>>>,
     cache: Arc<Mutex<HashMap<(String, String), CacheEntry>>>,
+    /// Per-upstream tombstone cursor + erased ids (ADR 0021).
+    tombstones: Arc<Mutex<HashMap<String, TombstoneState>>>,
     eq: Arc<Mutex<EquivalenceSet>>,
     buckets: Arc<Mutex<HashMap<String, TokenBucket>>>,
     rate: RateLimit,
@@ -99,6 +120,7 @@ impl AppState {
         Self {
             servers: Arc::new(Mutex::new(BTreeSet::new())),
             cache: Arc::new(Mutex::new(HashMap::new())),
+            tombstones: Arc::new(Mutex::new(HashMap::new())),
             eq: Arc::new(Mutex::new(EquivalenceSet::new())),
             buckets: Arc::new(Mutex::new(HashMap::new())),
             rate,
@@ -154,6 +176,12 @@ impl AppState {
             let mut cache = state.cache.lock().unwrap();
             for (key, entry) in store.cache().map_err(to_io)? {
                 cache.insert(key, entry);
+            }
+        }
+        {
+            let mut tombs = state.tombstones.lock().unwrap();
+            for (server, ts) in store.tombstone_states().map_err(to_io)? {
+                tombs.insert(server, ts);
             }
         }
 
@@ -323,9 +351,100 @@ async fn index(State(state): State<AppState>, Query(p): Query<IndexParams>) -> J
 }
 
 impl AppState {
+    /// Fetch one `(server, uri)` collection: the polite upstream read, minus
+    /// anything that upstream has since erased (ADR 0021 — a cache must honor
+    /// tombstones, so an erased id is never served even from a fresh entry).
+    async fn fetch(&self, server: &str, uri: &str) -> Vec<Annotation> {
+        let items = self.fetch_upstream(server, uri).await;
+        let erased = self
+            .tombstones
+            .lock()
+            .unwrap()
+            .get(server)
+            .map(|t| t.ids.clone())
+            .unwrap_or_default();
+        if erased.is_empty() {
+            return items;
+        }
+        items
+            .into_iter()
+            .filter(|a| dedup_id(a).map(|d| !erased.contains(&d)).unwrap_or(true))
+            .collect()
+    }
+
+    /// Pull the upstream tombstone feed from the per-server cursor, remember
+    /// the erased ids, and evict them from every cached page of that server
+    /// (write-through when persistence is on). An upstream without the
+    /// `/tombstones` endpoint (pre-erasure) is silently skipped.
+    async fn refresh_tombstones(&self, server: &str) {
+        let cursor = self
+            .tombstones
+            .lock()
+            .unwrap()
+            .get(server)
+            .map(|t| t.cursor)
+            .unwrap_or(0);
+        let url = format!("{server}/tombstones?gt_deleted_at={cursor}");
+        let Ok(resp) = self.http.get(&url).send().await else {
+            return;
+        };
+        if !resp.status().is_success() {
+            return;
+        }
+        let Ok(tombs) = resp.json::<Vec<TombstoneItem>>().await else {
+            return;
+        };
+        if tombs.is_empty() {
+            return;
+        }
+
+        // Advance the cursor and collect the newly learned erasures.
+        let (new_ids, snapshot) = {
+            let mut map = self.tombstones.lock().unwrap();
+            let entry = map.entry(server.to_string()).or_default();
+            let mut new_ids: HashSet<String> = HashSet::new();
+            for t in &tombs {
+                entry.cursor = entry.cursor.max(t.deleted_at);
+                if entry.ids.insert(t.dedup_id.clone()) {
+                    new_ids.insert(t.dedup_id.clone());
+                }
+            }
+            (new_ids, entry.clone())
+        };
+        if let Some(p) = &self.persist {
+            let _ = p.put_tombstones(server, &snapshot);
+        }
+        if new_ids.is_empty() {
+            return;
+        }
+
+        // Evict the erased annotations from every cached page of this server.
+        let mut changed: Vec<((String, String), CacheEntry)> = Vec::new();
+        {
+            let mut cache = self.cache.lock().unwrap();
+            for (key, entry) in cache.iter_mut() {
+                if key.0 != server {
+                    continue;
+                }
+                let before = entry.items.len();
+                entry
+                    .items
+                    .retain(|a| dedup_id(a).map(|d| !new_ids.contains(&d)).unwrap_or(true));
+                if entry.items.len() != before {
+                    changed.push((key.clone(), entry.clone()));
+                }
+            }
+        }
+        if let Some(p) = &self.persist {
+            for (key, entry) in &changed {
+                let _ = p.put_cache(&key.0, &key.1, entry);
+            }
+        }
+    }
+
     /// Fetch one `(server, uri)` collection with caching + conditional GET +
     /// rate limiting. Returns the freshest items known (possibly from cache).
-    async fn fetch(&self, server: &str, uri: &str) -> Vec<Annotation> {
+    async fn fetch_upstream(&self, server: &str, uri: &str) -> Vec<Annotation> {
         let key = (server.to_string(), uri.to_string());
         let cached = self
             .cache
@@ -347,6 +466,11 @@ impl AppState {
         if !self.allow(&host_of(server)) {
             return cached.items;
         }
+
+        // The same (rate-budgeted) poll also pulls the upstream tombstone feed
+        // (ADR 0021), so an erasure propagates no later than the cache's next
+        // revalidation — the staleness bound politeness already grants.
+        self.refresh_tombstones(server).await;
 
         let url = format!("{server}/annotations/?target={}", urlencode(uri));
         let mut req = self.http.get(&url);
