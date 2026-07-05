@@ -130,6 +130,80 @@ test("e2e harness: self-signed publish + read back for all widget kinds", async 
   await expect(page.locator("#comment .fb-status")).toHaveText("");
 });
 
+/** Minimal JCS (RFC 8785): sorted keys, no whitespace — matches the widget's
+ * own jcs() for these plain string/object fixtures. */
+function jcs(value) {
+  return JSON.stringify(sortKeys(value));
+}
+function sortKeys(v) {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === "object") {
+    const out = {};
+    for (const k of Object.keys(v).sort()) out[k] = sortKeys(v[k]);
+    return out;
+  }
+  return v;
+}
+
+/** Publish one throwaway signed comment directly via HTTP (bypassing the
+ * browser) with a fresh identity and the given `created` timestamp. */
+async function seedComment(feedbackUrl, target, created, value) {
+  const { webcrypto } = require("node:crypto");
+  const kp = await webcrypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const spki = Buffer.from(await webcrypto.subtle.exportKey("spki", kp.publicKey));
+  const digest = Buffer.from(await webcrypto.subtle.digest("SHA-256", spki));
+  const issuerId = "urn:freedback:key:" + digest.toString("hex");
+  const kid = `-----BEGIN PUBLIC KEY-----\n${spki.toString("base64").match(/.{1,64}/g).join("\n")}\n-----END PUBLIC KEY-----\n`;
+  const content = {
+    "@context": ["http://www.w3.org/ns/anno.jsonld", "https://freedback.net/ns/context.jsonld"],
+    type: "Annotation",
+    motivation: "commenting",
+    creator: { id: issuerId },
+    created,
+    target,
+    body: [{ type: "TextualBody", value, format: "text/plain", purpose: "commenting" }],
+    conformsTo: "https://freedback.net/profile/1",
+  };
+  const bytes = Buffer.from(jcs(content));
+  const sigRaw = Buffer.from(await webcrypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, kp.privateKey, bytes));
+  const sig = sigRaw.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const resp = await fetch(feedbackUrl, {
+    method: "POST",
+    headers: { "content-type": "application/ld+json" },
+    body: JSON.stringify({ ...content, signature: { alg: "ES256", kid, sig } }),
+  });
+  if (!resp.ok) throw new Error(`seed failed: ${resp.status} ${await resp.text()}`);
+}
+
+// 2b) Own-item delete affordance survives a target with more history than the
+// server's default page size (issue: dogfood page's comment × control stopped
+// appearing once the target accumulated 50+ older comments). Both `readUrl()`
+// (widget → feedback/collection server) and the collection server's own
+// upstream fetch must ask for the unbounded collection, not just page 0.
+test("e2e harness: own-delete affordance survives a target past the default page size", async ({ page }) => {
+  const target = "https://example.com/item/paginated-" + Date.now();
+  const commentTarget = target + "#comment";
+
+  // Seed 55 strictly-older comments directly (oldest-first server ordering
+  // means these fill exactly the pages before ours).
+  for (let i = 0; i < 55; i++) {
+    const created = new Date(Date.now() - (55 - i) * 1000).toISOString();
+    await seedComment(FEEDBACK, commentTarget, created, `seed-${i}`);
+  }
+
+  await page.goto(harnessUrl("sign", target));
+  await page.waitForFunction(() => window.__fbReady === true);
+
+  const marker = "our own comment " + Date.now();
+  await page.locator("#comment .fb-in").fill(marker);
+  await page.locator("#comment form button").click();
+  await expect(page.locator(`#comment .fb-list li:has-text("${marker}")`)).toBeVisible({ timeout: 15000 });
+  // The own-item delete control must render even though 55 older items exist.
+  await expect(page.locator(`#comment .fb-list li:has-text("${marker}") .fb-del`)).toBeVisible({
+    timeout: 15000,
+  });
+});
+
 // 3) OAuth bearer (data-token) path: publish + read back the aggregate.
 test("e2e harness: data-token (OAuth bearer) publish + read back", async ({ page }) => {
   expect(TOKEN, "FB_E2E_TOKEN must be set for the bearer path").toBeTruthy();
