@@ -6,15 +6,15 @@
     <title>Freedback — live widget showcase</title>
     <meta
       name="description"
-      content="A federated, open feedback protocol carried as W3C Web Annotations. Try the drop-in widgets live — running against an in-browser mock backend."
+      content="A federated, open feedback protocol carried as W3C Web Annotations. Try the drop-in widgets live — publishing real, public feedback to a live demo server."
     />
     <!--
       The shipped, vanilla Web Components (component 3), loaded verbatim from
       widgets/freedback-widgets.js. It registers the custom elements
       (<freedback-stars> etc.) on a global side-effecting IIFE. Loaded as a
       classic <script> in <head> so the elements are defined before React mounts
-      and renders them. The in-browser mock backend (src/mock-backend.js) installs
-      its window.fetch interceptor from the React entry, before any widget refresh.
+      and renders them. No mock: the widgets read from and publish to the live
+      demo server (see src/App.jsx).
     -->
     <script src="/freedback-widgets.js"></script>
     <!--

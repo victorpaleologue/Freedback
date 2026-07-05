@@ -22,7 +22,7 @@ import { useEffect, useRef } from "react";
 //   every attribute already in place — identical to writing the tag in static
 //   HTML. data-sign is a valueless boolean attribute (the widget checks
 //   hasAttribute), so we set it to "" when enabled and never to "false".
-export default function FreedbackWidget({ kind, target, read, publish, sign, token, ...rest }) {
+export default function FreedbackWidget({ kind, target, read, publish, sign, token, license, ...rest }) {
   const hostRef = useRef(null);
 
   useEffect(() => {
@@ -34,6 +34,7 @@ export default function FreedbackWidget({ kind, target, read, publish, sign, tok
     if (publish != null) el.setAttribute("data-publish", publish);
     if (sign) el.setAttribute("data-sign", ""); // present == enabled (boolean attr)
     if (token != null) el.setAttribute("data-token", token);
+    if (license != null) el.setAttribute("data-license", license); // rights IRI (ADR 0022)
     // Pass through extra data-* config (e.g. data-worst/data-best/data-step).
     for (const [k, v] of Object.entries(rest)) {
       if (k.startsWith("data-") && v != null) el.setAttribute(k, String(v));
@@ -47,7 +48,7 @@ export default function FreedbackWidget({ kind, target, read, publish, sign, tok
     };
     // Re-create the element if any configuration prop changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, target, read, publish, sign, token, JSON.stringify(rest)]);
+  }, [kind, target, read, publish, sign, token, license, JSON.stringify(rest)]);
 
   return <span ref={hostRef} className="fb-host" />;
 }

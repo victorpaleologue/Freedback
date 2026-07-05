@@ -5,9 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Freedback — annotate anything</title>
   <meta name="description" content="Attach Freedback feedback to a law, a Wikipedia article, an arbitrary web page — resources that host no feedback UI of their own." />
-  <!-- The mock MUST load first: it installs the fetch interceptor before any
-       widget calls fetch(). Then the canonical shipped widgets. -->
-  <script src="/anywhere/mock.js"></script>
+  <!-- The canonical shipped widgets. No mock here: every widget points at a
+       real, live Freedback server. -->
   <script src="/widgets/freedback-widgets.js"></script>
   <link rel="stylesheet" href="/freedback.css" />
   <script src="/theme.js"></script>
@@ -21,15 +20,19 @@
   feedback UI of their own — and that this project does not control.</p>
 
   <div class="banner">
-    <strong>Demo mode.</strong> There is no live Freedback server here. All reads
-    and writes are simulated in your browser by <code>/anywhere/mock.js</code> —
-    nothing is sent to the target sites or anywhere else.
+    <strong>This is not a mock.</strong> This page publishes to a live Freedback
+    demo server — everything you post is <em>public</em>. Your feedback is
+    signed by a key generated in <em>your</em> browser, and you can delete it
+    (the ×): the right to erasure, implemented. Storage is ephemeral (it may
+    reset), and the first load after idle can take a few seconds while the
+    server wakes.
   </div>
 
   <p>The point: the target site is never involved. Feedback lives on a Freedback
   server keyed by the target URI, and anyone pointing a widget at the same URI
-  sees the same aggregate. The three resources below have no idea this page
-  exists.</p>
+  sees the same aggregate. The three resources below are <em>real</em> external
+  URIs the project does not control — the feedback you see on them is real,
+  shared feedback left by other visitors of this page. That is the whole point.</p>
 
   <!-- 1. A law: GDPR via its ELI URI -->
   <div class="card">
@@ -45,15 +48,17 @@
         <span>How clear is this regulation?</span>
         <freedback-stars
           data-target="http://data.europa.eu/eli/reg/2016/679/oj"
-          data-read="https://collection.demo.freedback.net/index"
-          data-publish="https://feedback.demo.freedback.net/annotations/"
-          data-sign></freedback-stars>
+          data-read="https://freedback-demo.fly.dev/annotations/"
+          data-publish="https://freedback-demo.fly.dev/annotations/"
+          data-sign
+          data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-stars>
       </div>
       <freedback-comment
         data-target="http://data.europa.eu/eli/reg/2016/679/oj#comments"
-        data-read="https://collection.demo.freedback.net/index"
-        data-publish="https://feedback.demo.freedback.net/annotations/"
-        data-sign></freedback-comment>
+        data-read="https://freedback-demo.fly.dev/annotations/"
+        data-publish="https://freedback-demo.fly.dev/annotations/"
+        data-sign
+        data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-comment>
     </div>
   </div>
 
@@ -70,15 +75,17 @@
         <span>Rate this article:</span>
         <freedback-stars
           data-target="https://en.wikipedia.org/wiki/Web_annotation"
-          data-read="https://collection.demo.freedback.net/index"
-          data-publish="https://feedback.demo.freedback.net/annotations/"
-          data-sign></freedback-stars>
+          data-read="https://freedback-demo.fly.dev/annotations/"
+          data-publish="https://freedback-demo.fly.dev/annotations/"
+          data-sign
+          data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-stars>
       </div>
       <freedback-tag
         data-target="https://en.wikipedia.org/wiki/Web_annotation#tags"
-        data-read="https://collection.demo.freedback.net/index"
-        data-publish="https://feedback.demo.freedback.net/annotations/"
-        data-sign></freedback-tag>
+        data-read="https://freedback-demo.fly.dev/annotations/"
+        data-publish="https://freedback-demo.fly.dev/annotations/"
+        data-sign
+        data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-tag>
     </div>
   </div>
 
@@ -95,15 +102,17 @@
         <span>Useful spec?</span>
         <freedback-thumb
           data-target="https://www.w3.org/TR/annotation-model/"
-          data-read="https://collection.demo.freedback.net/index"
-          data-publish="https://feedback.demo.freedback.net/annotations/"
-          data-sign></freedback-thumb>
+          data-read="https://freedback-demo.fly.dev/annotations/"
+          data-publish="https://freedback-demo.fly.dev/annotations/"
+          data-sign
+          data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-thumb>
       </div>
       <freedback-comment
         data-target="https://www.w3.org/TR/annotation-model/#comments"
-        data-read="https://collection.demo.freedback.net/index"
-        data-publish="https://feedback.demo.freedback.net/annotations/"
-        data-sign></freedback-comment>
+        data-read="https://freedback-demo.fly.dev/annotations/"
+        data-publish="https://freedback-demo.fly.dev/annotations/"
+        data-sign
+        data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-comment>
     </div>
   </div>
 
@@ -113,15 +122,16 @@
   GDPR stars widget is literally:</p>
   <pre><code>&lt;freedback-stars
   data-target="http://data.europa.eu/eli/reg/2016/679/oj"
-  data-read="https://collection.demo.freedback.net/index"
-  data-publish="https://feedback.demo.freedback.net/annotations/"
-  data-sign&gt;&lt;/freedback-stars&gt;</code></pre>
-  <p><code>data-read</code> points at a collection server's <code>/index</code>
-  (aggregated reads), <code>data-publish</code> at a feedback server's
-  <code>/annotations/</code> (signed writes), and <code>data-sign</code> selects
-  the portable, self-signed P-256 identity. The target site appears nowhere in
-  that configuration. Comment and tag widgets use a <code>#fragment</code> on the
-  same resource so their counts never mix with the rating widget's.</p>
+  data-read="https://freedback-demo.fly.dev/annotations/"
+  data-publish="https://freedback-demo.fly.dev/annotations/"
+  data-sign
+  data-license="https://creativecommons.org/licenses/by/4.0/"&gt;&lt;/freedback-stars&gt;</code></pre>
+  <p><code>data-read</code> and <code>data-publish</code> both point at the live
+  demo feedback server's <code>/annotations/</code> endpoint (reads by target,
+  signed writes), and <code>data-sign</code> selects the portable, self-signed
+  P-256 identity. The target site appears nowhere in that configuration. Comment
+  and tag widgets use a <code>#fragment</code> on the same resource so their
+  counts never mix with the rating widget's.</p>
 
   <p class="nav">
     <a href="/">← Home</a> &nbsp;·&nbsp;

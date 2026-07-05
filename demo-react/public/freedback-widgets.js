@@ -19,6 +19,12 @@
  *   - `data-token` → an OAuth bearer (the siloed, non-federating identity).
  * `data-sign` wins when both are present.
  *
+ * Every widget kind also accepts an optional `data-license` attribute: a
+ * license IRI (e.g. https://creativecommons.org/licenses/by/4.0/) set as the
+ * annotation's W3C `rights` property on both the signed and bearer publish
+ * paths (data licensing, ADR 0022). It is part of the signed content. Without
+ * it, feedback falls under the server's default license (well-known).
+ *
  * The native wire format is a W3C Web Annotation; these widgets emit exactly the
  * same shape `freedback-protocol` does in Rust, and the signature is computed
  * over the same JCS bytes the Rust server reconstructs and verifies (ADR 0013).
@@ -54,8 +60,8 @@
     return resp.json();
   }
 
-  function baseAnnotation(motivation, target, body) {
-    return {
+  function baseAnnotation(motivation, target, body, rights) {
+    const ann = {
       "@context": ANNO_CTX,
       type: "Annotation",
       motivation,
@@ -64,6 +70,9 @@
       body: [body],
       conformsTo: PROFILE,
     };
+    // Optional data license (ADR 0022): a license IRI on the W3C `rights` term.
+    if (rights) ann.rights = rights;
+    return ann;
   }
 
   // --- RFC 8785 JCS canonicalization --------------------------------------
@@ -92,9 +101,11 @@
   }
 
   /** The signed content: the model shape minus `id`/`signature` (what Rust
-   *  canonicalizes on verify). Bodies must already be in canonical wire form. */
-  function canonicalContent(motivation, target, body, creatorId, created) {
-    return {
+   *  canonicalizes on verify). Bodies must already be in canonical wire form.
+   *  `rights` (a license IRI, ADR 0022) is content: when present it is part of
+   *  the canonical bytes the signature covers. */
+  function canonicalContent(motivation, target, body, creatorId, created, rights) {
+    const content = {
       "@context": ANNO_CTX,
       type: "Annotation",
       motivation,
@@ -104,6 +115,8 @@
       body: [body],
       conformsTo: PROFILE,
     };
+    if (rights) content.rights = rights;
+    return content;
   }
 
   // --- WebCrypto P-256 self-signed identity --------------------------------
@@ -164,6 +177,21 @@
   function getIdentity() {
     if (!identityPromise) identityPromise = loadIdentity();
     return identityPromise;
+  }
+
+  /** The local issuer id, computed once per page from the existing identity
+   *  machinery — used to recognise the visitor's OWN annotations in fetched
+   *  lists (ownership detection for the delete affordance, ADR 0021). Resolves
+   *  to null where the identity is unavailable (no secure context). */
+  let ownIssuerPromise = null;
+  function getOwnIssuerId() {
+    if (!ownIssuerPromise) {
+      ownIssuerPromise = getIdentity().then(
+        (i) => i.issuerId,
+        () => null
+      );
+    }
+    return ownIssuerPromise;
   }
   async function loadIdentity() {
     const sc = subtle();
@@ -289,6 +317,7 @@
     const db = await openDb();
     await idbPut(db, "kp", rec);
     identityPromise = null;
+    ownIssuerPromise = null;
     return identityFromRecord(sc, rec);
   }
 
@@ -331,17 +360,55 @@
     const link = oldIdent ? await buildRotationLink(sc, oldIdent, newRec) : null;
     await idbPut(db, "kp", newRec);
     identityPromise = null;
+    ownIssuerPromise = null;
     const newIdent = await identityFromRecord(sc, newRec);
     return { identity: newIdent, previous: oldIdent, link };
   }
 
   /** Build a self-signed annotation (detached ES256 over the JCS bytes).
-   *  `created` is overridable so tests can pin a deterministic content. */
-  async function buildSignedAnnotation(motivation, target, body, ident, created) {
-    const content = canonicalContent(motivation, target, body, ident.issuerId, created || new Date().toISOString());
+   *  `created` is overridable so tests can pin a deterministic content;
+   *  `rights` optionally licenses the feedback (ADR 0022). */
+  async function buildSignedAnnotation(motivation, target, body, ident, created, rights) {
+    const content = canonicalContent(motivation, target, body, ident.issuerId, created || new Date().toISOString(), rights);
     const bytes = new TextEncoder().encode(jcs(content));
     const raw = await subtle().sign({ name: "ECDSA", hash: "SHA-256" }, ident.priv, bytes);
     return { ...content, signature: { alg: "ES256", kid: ident.kid, sig: b64url(raw) } };
+  }
+
+  // --- right to erasure (ADR 0021) ------------------------------------------
+  // An author deletes their own annotation with a *delete document* signed by
+  // the SAME key that signed the annotation. The canonical shape mirrors
+  // crates/protocol-lib/src/erasure.rs exactly:
+  //   {"type":"Delete","annotation":"<dedup_id>","created":"<RFC3339>"}
+  // and the ES256 signature is computed over the JCS bytes of the document
+  // WITHOUT the `signature` field — same canonicalization, same scheme, same
+  // kid (SPKI PEM) / sig (base64url, no pad) encoding as annotations.
+
+  /** The unsigned delete document (the exact bytes-to-sign, once JCS'd). */
+  function deleteDocument(dedupId, created) {
+    return {
+      type: "Delete",
+      annotation: dedupId,
+      created: created || new Date().toISOString(),
+    };
+  }
+
+  /** Sign a delete document with the page identity (detached ES256 over the
+   *  JCS bytes). `created` is overridable so tests can pin the content. */
+  async function buildSignedDelete(dedupId, ident, created) {
+    const doc = deleteDocument(dedupId, created);
+    const bytes = new TextEncoder().encode(jcs(doc));
+    const raw = await subtle().sign({ name: "ECDSA", hash: "SHA-256" }, ident.priv, bytes);
+    return { ...doc, signature: { alg: "ES256", kid: ident.kid, sig: b64url(raw) } };
+  }
+
+  /** The dedup id is the basename of the server-minted annotation `id`
+   *  (`{base}/annotations/{dedup}`). Never fetch that URL — just take the last
+   *  path segment (an IRI with no `/` path, e.g. a urn, passes through whole). */
+  function dedupFromId(id) {
+    if (!id) return null;
+    const path = String(id).split(/[?#]/)[0];
+    return path.split("/").filter(Boolean).pop() || null;
   }
 
   // --- canonical body builders (match the Rust BodyWire serialization) -----
@@ -404,6 +471,8 @@
     get publishUrl() { return this.getAttribute("data-publish"); }
     get token() { return this.getAttribute("data-token") || undefined; }
     get signing() { return this.hasAttribute("data-sign") && !!subtle(); }
+    /** Optional license IRI set as the annotation's `rights` (ADR 0022). */
+    get license() { return this.getAttribute("data-license") || undefined; }
 
     connectedCallback() {
       this.render();
@@ -414,6 +483,10 @@
       if (!this.readBase || !this.target) return;
       try {
         this.annotations = await fetchAnnotations(this.readBase, this.target);
+        // Ownership detection (ADR 0021): with data-sign in a secure context,
+        // items whose creator.id equals this browser identity's issuer id are
+        // the visitor's OWN feedback and get a delete affordance.
+        this.ownerId = this.signing ? await getOwnIssuerId() : null;
         this.renderAggregate();
       } catch (e) {
         this.setStatus(String(e.message || e));
@@ -431,12 +504,18 @@
         let ann;
         let stored;
         if (this.signing) {
-          ann = await buildSignedAnnotation(motivation, this.target, body, await getIdentity());
+          // data-license rides in the signed content (6th arg; created defaults).
+          ann = await buildSignedAnnotation(motivation, this.target, body, await getIdentity(), undefined, this.license);
           stored = await publish(this.publishUrl, ann);
         } else {
-          ann = baseAnnotation(motivation, this.target, body);
+          ann = baseAnnotation(motivation, this.target, body, this.license);
           stored = await publish(this.publishUrl, ann, this.token);
         }
+        // Remember the just-published record's dedup id (the basename of the
+        // server-minted `id`) so rating widgets can offer an "undo" (erase)
+        // affordance for this session's submission (ADR 0021).
+        const dedup = stored ? dedupFromId(stored.id) : null;
+        if (dedup) this.lastDedup = dedup;
         // Additive outcome event: a host app (e.g. React via a ref) can observe a
         // successful publish without scraping the widget's own DOM. `detail`
         // carries the stored annotation / server `response` plus the `annotation`
@@ -448,6 +527,83 @@
         // Additive failure event mirroring `freedback:published`.
         this.emit("freedback:error", { error: e });
       }
+    }
+
+    /** Whether this widget can issue a delete at all: it needs somewhere to
+     *  send it plus an identity — the signing key, or the same bearer that
+     *  authorized the publish (the server checks ownership either way). */
+    canErase() {
+      return !!this.publishUrl && (this.signing || !!this.token);
+    }
+
+    /** Whether a fetched annotation is the visitor's own (signed) feedback. */
+    isOwn(ann) {
+      return !!(this.ownerId && ann && ann.creator && ann.creator.id === this.ownerId);
+    }
+
+    /** Erase one annotation by dedup id — the author's right to erasure
+     *  (ADR 0021). Builds the delete document, signs it with the SAME stored
+     *  key that signs annotations (or carries the same bearer on the OAuth
+     *  path), then `DELETE {data-publish}/{dedup}`. On 204 the aggregate/list
+     *  refreshes and `freedback:deleted` fires; failures surface in
+     *  `.fb-status` and fire `freedback:error`. */
+    async erase(dedupId) {
+      if (!this.publishUrl || !dedupId) return;
+      try {
+        const headers = { "content-type": "application/json" };
+        let doc;
+        if (this.signing) {
+          doc = await buildSignedDelete(dedupId, await getIdentity());
+        } else if (this.token) {
+          doc = deleteDocument(dedupId);
+          headers.authorization = `Bearer ${this.token}`;
+        } else {
+          throw new Error("delete needs data-sign or data-token");
+        }
+        const sep = this.publishUrl.endsWith("/") ? "" : "/";
+        const resp = await fetch(`${this.publishUrl}${sep}${dedupId}`, {
+          method: "DELETE",
+          headers,
+          body: JSON.stringify(doc),
+        });
+        if (resp.status !== 204 && !resp.ok) {
+          throw new Error(`delete failed: ${resp.status} ${await resp.text()}`);
+        }
+        if (this.lastDedup === dedupId) this.lastDedup = null;
+        this.emit("freedback:deleted", { annotation: dedupId, response: resp });
+        await this.refresh();
+      } catch (e) {
+        this.setStatus(String(e.message || e));
+        this.emit("freedback:error", { error: e });
+      }
+    }
+
+    /** A small `×` control that erases `dedupId` when clicked. */
+    deleteControl(dedupId) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "fb-del";
+      btn.setAttribute("aria-label", "Delete my feedback");
+      btn.title = "Delete my feedback";
+      btn.textContent = "×";
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.erase(dedupId);
+      });
+      return btn;
+    }
+
+    /** Rating widgets have no per-item list, so after a successful publish in
+     *  this session they show an "undo" delete control next to `.fb-agg` that
+     *  erases the just-published annotation. Call at the end of
+     *  `renderAggregate()`. */
+    renderUndo() {
+      const agg = this.querySelector(".fb-agg");
+      if (!agg) return;
+      const existing = this.querySelector(".fb-del");
+      if (existing) existing.remove();
+      if (!this.lastDedup || !this.canErase()) return;
+      agg.after(this.deleteControl(this.lastDedup));
     }
 
     /** Dispatch a bubbling, composed CustomEvent on this host element so a host
@@ -475,6 +631,7 @@
       const vals = this.annotations.map(ratingValue).filter((v) => v != null);
       const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : "–";
       this.querySelector(".fb-agg").textContent = ` ${avg} (${vals.length})`;
+      this.renderUndo();
     }
   }
 
@@ -496,6 +653,7 @@
       const vals = this.annotations.map(ratingValue).filter((v) => v != null);
       const up = vals.filter((v) => v >= 0.5).length;
       this.querySelector(".fb-agg").textContent = ` 👍 ${up} · 👎 ${vals.length - up}`;
+      this.renderUndo();
     }
   }
 
@@ -528,6 +686,7 @@
       const vals = this.annotations.map(ratingValue).filter((v) => v != null);
       const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : "–";
       this.querySelector(".fb-agg").textContent = ` avg ${avg} (${vals.length})`;
+      this.renderUndo();
     }
   }
 
@@ -550,9 +709,18 @@
       }
     }
     renderAggregate() {
-      const comments = this.annotations.flatMap((a) => textBodies(a, "commenting"));
-      this.querySelector(".fb-list").innerHTML = comments.map(() => `<li></li>`).join("");
-      this.querySelectorAll(".fb-list li").forEach((li, i) => (li.textContent = comments[i]));
+      const ul = this.querySelector(".fb-list");
+      ul.innerHTML = "";
+      for (const ann of this.annotations) {
+        const own = this.isOwn(ann) && this.canErase();
+        for (const text of textBodies(ann, "commenting")) {
+          const li = document.createElement("li");
+          li.textContent = text;
+          // The visitor's OWN comments get a delete control (ADR 0021).
+          if (own) li.appendChild(this.deleteControl(dedupFromId(ann.id)));
+          ul.appendChild(li);
+        }
+      }
     }
   }
 
@@ -576,15 +744,25 @@
       }
     }
     renderAggregate() {
-      const tags = this.annotations.flatMap((a) => textBodies(a, "tagging"));
+      // tag -> { n, ownDedup }: chips aggregate counts across annotations, and
+      // remember the visitor's OWN submission of that tag (if any) so the chip
+      // can offer to delete just their annotation (ADR 0021).
       const counts = new Map();
-      for (const t of tags) counts.set(t, (counts.get(t) || 0) + 1);
+      for (const ann of this.annotations) {
+        for (const t of textBodies(ann, "tagging")) {
+          const entry = counts.get(t) || { n: 0, ownDedup: null };
+          entry.n += 1;
+          if (!entry.ownDedup && this.isOwn(ann)) entry.ownDedup = dedupFromId(ann.id);
+          counts.set(t, entry);
+        }
+      }
       const span = this.querySelector(".fb-tags");
       span.innerHTML = "";
-      for (const [t, n] of counts) {
+      for (const [t, { n, ownDedup }] of counts) {
         const chip = document.createElement("span");
         chip.className = "fb-chip";
         chip.textContent = n > 1 ? `${t} ×${n}` : t;
+        if (ownDedup && this.canErase()) chip.appendChild(this.deleteControl(ownDedup));
         span.appendChild(chip);
       }
     }
@@ -611,6 +789,10 @@
       scalarBody,
       textBody,
       buildSignedAnnotation,
+      // right to erasure (ADR 0021)
+      deleteDocument,
+      buildSignedDelete,
+      dedupFromId,
       getIdentity,
       // identity management (issue #27). The *Record helpers take an explicit
       // SubtleCrypto so they unit-test in Node without IndexedDB; the IndexedDB-
