@@ -4,19 +4,29 @@ name: Deploy (Fly.io)
 #   * feedback (demo) server  -> app in deploy/fly/feedback.toml
 #   * discovery server        -> app in deploy/fly/discovery.toml
 #
-# GUARDED: the whole job runs only when a `FLY_API_TOKEN` repo secret is
-# present (same pattern as release.yml's publish-npm-widgets: `secrets` IS
-# readable in a job-level `if`, so an absent token skips the job cleanly and a
-# push never fails for want of a token). To turn it on, create a Fly access
+# GUARDED: the deploy job runs only when a `FLY_API_TOKEN` repo secret is
+# present, via the `guard` job below — an absent token skips deploy cleanly, so
+# a push never fails for want of a token. To turn it on, create a Fly access
 # token and add it as the secret — see docs/hosting.md ("Automated
 # deployment"). The apps are created on first run (idempotent), so you don't
 # need flyctl locally.
 #
 # Each successful deploy is recorded as a GitHub Deployment (native Actions
-# `environment:` block below) — this is what makes the live URL show up under
-# the repo's "Environments" panel / deployments feed. `<app>.fly.dev` is used
-# as the environment URL because it always resolves immediately after deploy,
-# unlike an optional custom subdomain that may not have DNS/certs attached yet.
+# `environment:` block on the deploy job) — this is what makes the live URL
+# show up under the repo's "Environments" panel / deployments feed.
+# `<app>.fly.dev` is used as the environment URL because it always resolves
+# immediately after deploy, unlike an optional custom subdomain that may not
+# have DNS/certs attached yet.
+#
+# Why a separate `guard` job instead of `if: secrets.FLY_API_TOKEN != ''` on
+# `deploy` directly: a job that declares `environment:` resolves environment
+# protection rules in an earlier phase, before secrets are available, so
+# `secrets` is NOT a legal named-value in THAT job's own `if:` (confirmed: this
+# exact expression on the deploy job itself fails workflow_dispatch validation
+# with "Unrecognized named-value: 'secrets'"). Checking the secret in a plain
+# guard job with no `environment:` and passing the result via `needs.*.outputs`
+# — a context that IS available in a job `if:` regardless of `environment:` —
+# sidesteps the restriction.
 on:
   push:
     branches: [main]
@@ -41,12 +51,28 @@ permissions:
   deployments: write # required for the `environment:` block to record a Deployment
 
 jobs:
+  guard:
+    name: check FLY_API_TOKEN
+    runs-on: ubuntu-latest
+    outputs:
+      has_token: ${{ steps.check.outputs.has_token }}
+    steps:
+      - id: check
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -n "$FLY_API_TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "FLY_API_TOKEN is not set — skipping Fly.io deploy (see docs/hosting.md)."
+          fi
+
   deploy:
     name: deploy ${{ matrix.config }}
+    needs: guard
+    if: ${{ needs.guard.outputs.has_token == 'true' }}
     runs-on: ubuntu-latest
-    # Gate the ENTIRE job (not just its steps) so no Deployment/Environment is
-    # even created when there's no token to actually deploy with.
-    if: ${{ secrets.FLY_API_TOKEN != '' }}
     strategy:
       # Independent apps — deploy both, don't abort one if the other fails.
       fail-fast: false
@@ -57,8 +83,8 @@ jobs:
       # Optional: set a repo variable FLY_ORG to deploy under a non-personal org.
       FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
     # Records a GitHub Deployment for this run. `name` must be resolvable
-    # up front (matrix/vars only — no step outputs), `url` is applied once the
-    # job finishes and can reference step outputs.
+    # up front (matrix/vars/needs only — no step outputs), `url` is applied
+    # once the job finishes and can reference step outputs.
     environment:
       name: fly-${{ matrix.config }}
       url: ${{ steps.app.outputs.url }}
