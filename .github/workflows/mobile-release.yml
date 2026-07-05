@@ -1,0 +1,153 @@
+name: Mobile release
+
+# Tagged mobile releases (`mobile-v*`) build the RELEASE Android artifacts:
+# an APK + AAB for arm64. Signing is GUARDED on the four ANDROID_* secrets
+# (guard-job pattern, exactly like fly-deploy.yml — `secrets` is not a legal
+# named-value in a job-level `if:` once `environment:` is involved, and a
+# plain guard job with outputs sidesteps the whole class of problems):
+#   * secrets absent  → an UNSIGNED apk/aab artifact is still built and
+#     uploaded (smoke test), and Release publishing is skipped cleanly.
+#   * secrets present → apksigner signs the APK, jarsigner signs the AAB, and
+#     both are attached to a GitHub Release for the tag.
+# This is the automation feed a future IzzyOnDroid / F-Droid listing pulls
+# from. Secrets:
+#   ANDROID_KEYSTORE_B64      base64 of the .jks keystore
+#   ANDROID_KEYSTORE_PASSWORD keystore password
+#   ANDROID_KEY_ALIAS         key alias
+#   ANDROID_KEY_PASSWORD      key password
+#
+# Cut a release:  git tag mobile-v0.1.0 && git push origin mobile-v0.1.0
+# A tag-less workflow_dispatch just builds the artifacts (no Release).
+
+on:
+  push:
+    tags: ["mobile-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create + publish (e.g. mobile-v0.1.0). Leave empty to only build."
+        required: false
+        type: string
+
+permissions:
+  contents: write # create the Release, the tag, and upload assets
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  guard:
+    name: check signing secrets
+    runs-on: ubuntu-latest
+    outputs:
+      has_keys: ${{ steps.check.outputs.has_keys }}
+    steps:
+      - id: check
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KS" ] && [ -n "$KS_PASS" ] && [ -n "$ALIAS" ] && [ -n "$KEY_PASS" ]; then
+            echo "has_keys=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_keys=false" >> "$GITHUB_OUTPUT"
+            echo "ANDROID_* signing secrets are not (all) set — building UNSIGNED artifacts and skipping Release publishing."
+          fi
+
+  release:
+    name: build release apk + aab (arm64)
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0 platform-tools ndk;27.1.12297006"
+      - name: Export NDK_HOME
+        run: |
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+      - name: Install Rust (stable + Android target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile
+          key: app-release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install the Tauri CLI (also used by the Gradle rust plugin)
+        run: |
+          npm i -g @tauri-apps/cli
+          tauri --version
+      - name: Build the release APK + AAB (aarch64)
+        working-directory: apps/mobile/src-tauri
+        run: tauri android build --apk --aab --target aarch64
+      - name: Collect unsigned artifacts
+        run: |
+          mkdir -p dist
+          cp apps/mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk dist/
+          cp apps/mobile/src-tauri/gen/android/app/build/outputs/bundle/arm64Release/*.aab dist/
+          ls -l dist
+
+      # ---- signed path (secrets present) -----------------------------------
+      - name: Sign the APK (zipalign + apksigner) and the AAB (jarsigner)
+        if: needs.guard.outputs.has_keys == 'true'
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          echo "$KS_B64" | base64 -d > keystore.jks
+
+          apk_in="$(ls dist/*.apk | head -n1)"
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$apk_in" aligned.apk
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks keystore.jks --ks-pass "pass:$KS_PASS" \
+            --ks-key-alias "$ALIAS" --key-pass "pass:$KEY_PASS" \
+            --out "dist/freedback-${TAG}-arm64.apk" aligned.apk
+          "$BUILD_TOOLS/apksigner" verify --print-certs "dist/freedback-${TAG}-arm64.apk"
+          rm -f "$apk_in" aligned.apk
+
+          aab_in="$(ls dist/*.aab | head -n1)"
+          jarsigner -keystore keystore.jks -storepass "$KS_PASS" -keypass "$KEY_PASS" \
+            "$aab_in" "$ALIAS"
+          mv "$aab_in" "dist/freedback-${TAG}-arm64.aab"
+
+          rm -f keystore.jks
+          (cd dist && sha256sum * > "freedback-${TAG}-android.sha256")
+          ls -l dist
+
+      - name: Upload artifacts (signed or unsigned)
+        uses: actions/upload-artifact@v4
+        with:
+          name: freedback-android-${{ env.TAG }}
+          path: dist/
+          if-no-files-found: error
+
+      # ---- publish (signed builds on a mobile-v* tag only) ------------------
+      - name: Publish the GitHub Release
+        if: ${{ needs.guard.outputs.has_keys == 'true' && startsWith(env.TAG, 'mobile-v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          # On manual dispatch the tag may not exist yet — create it here.
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

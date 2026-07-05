@@ -3,7 +3,11 @@ name: CI
 on:
   push:
     branches: ["**"]
+    # The mobile app is its own excluded workspace with its own pipeline
+    # (app-ci.yml) — keep this heavy workflow out of app-only changes.
+    paths-ignore: ["apps/mobile/**"]
   pull_request:
+    paths-ignore: ["apps/mobile/**"]
   workflow_dispatch:
 
 # Cancel superseded runs on the same ref.
