@@ -108,7 +108,16 @@ pub fn build_app(state: AppState) -> Router {
                 .options(handlers::options_container),
         )
         .route("/annotations/by-id", post(handlers::post_by_id))
-        .route("/annotations/{id}", get(handlers::get_one))
+        .route(
+            "/annotations/{id}",
+            // GET reads one annotation; DELETE is the author's right to
+            // erasure (ADR 0021); OPTIONS advertises the item's methods.
+            get(handlers::get_one)
+                .delete(handlers::delete_one)
+                .options(handlers::options_item),
+        )
+        // Erasure propagation feed: content-free tombstones (ADR 0021).
+        .route("/tombstones", get(handlers::get_tombstones))
         // Freedback-annotation JWT (payload = our annotation, ADR 0010).
         .route("/submit/{jwt}", put(handlers::submit))
         // Mangrove review-schema JWT (sub/rating/opinion → annotation).
@@ -128,13 +137,14 @@ pub fn build_app(state: AppState) -> Router {
 }
 
 /// A permissive CORS layer for cross-origin browser widgets: any origin, the
-/// methods/headers the widgets use (GET/POST + `content-type`/`authorization`),
-/// and the conditional-read response headers an aggregator/widget inspects.
+/// methods/headers the widgets use (GET/POST/DELETE +
+/// `content-type`/`authorization`), and the conditional-read response headers
+/// an aggregator/widget inspects.
 fn permissive_cors() -> tower_http::cors::CorsLayer {
     use axum::http::{header, Method};
     tower_http::cors::CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         .expose_headers([header::ETAG, header::LAST_MODIFIED, header::LINK])
 }

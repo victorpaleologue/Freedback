@@ -446,10 +446,309 @@ async fn well_known_advertises_capabilities() {
     let (status, _h, doc) = send(&app, "GET", "/.well-known/freedback", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(doc["protocol"], "freedback/1");
-    assert!(doc["capabilities"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|c| c == "wap-container"));
+    let caps = doc["capabilities"].as_array().unwrap();
+    assert!(caps.iter().any(|c| c == "wap-container"));
+    assert!(caps.iter().any(|c| c == "erasure"), "ADR 0021 capability");
     assert_eq!(doc["conformsTo"], "https://freedback.net/profile/1");
+}
+
+// --- right to erasure (ADR 0021) --------------------------------------------
+
+/// Build a signed delete document for `dedup` with `id`'s key.
+fn signed_delete(id: &Identity, dedup: &str) -> Value {
+    let mut doc = freedback_protocol::DeleteRequest::new(dedup, "2026-07-05T12:00:00Z");
+    id.sign_delete(&mut doc).unwrap();
+    serde_json::to_value(doc).unwrap()
+}
+
+/// POST a signed annotation and return its dedup id (last path segment).
+async fn publish(app: &Router, ann: Value) -> String {
+    let (status, _h, body) = send(app, "POST", "/annotations/", None, Some(ann)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    body["id"]
+        .as_str()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+#[tokio::test]
+async fn erasure_lifecycle_self_signed() {
+    let app = app();
+    let (id, ann) = signed_star(4.0);
+    let dedup = publish(&app, ann.clone()).await;
+    let item = format!("/annotations/{dedup}");
+
+    // Present before the delete.
+    let (status, _h, _b) = send(&app, "GET", &item, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // DELETE with the author's key → 204 No Content.
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &item,
+        None,
+        Some(signed_delete(&id, &dedup)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // GET now answers 410 Gone (tombstoned, not merely unknown).
+    let (status, _h, _b) = send(&app, "GET", &item, None, None).await;
+    assert_eq!(status, StatusCode::GONE);
+
+    // The collection no longer returns it.
+    let (_s, _h, page) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(page["partOf"]["total"], 0, "erased from the container read");
+
+    // Re-POSTing the same content is 410: erased stays erased.
+    let (status, _h, _b) = send(&app, "POST", "/annotations/", None, Some(ann.clone())).await;
+    assert_eq!(status, StatusCode::GONE);
+
+    // …including through the batch path (per-item 410).
+    let (status, _h, body) = send(
+        &app,
+        "POST",
+        "/annotations/",
+        None,
+        Some(Value::Array(vec![ann])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::MULTI_STATUS);
+    assert_eq!(body["results"][0]["status"], 410);
+
+    // The tombstone feed lists it (content-free: just id, time, proof).
+    let (status, _h, tombs) = send(&app, "GET", "/tombstones?gt_deleted_at=0", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let tombs = tombs.as_array().unwrap();
+    assert_eq!(tombs.len(), 1);
+    assert_eq!(tombs[0]["dedup_id"], dedup.as_str());
+    assert_eq!(tombs[0]["proof"]["type"], "Delete");
+    assert!(tombs[0].get("body").is_none() && tombs[0].get("target").is_none());
+
+    // Deleting again is idempotent → 204.
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &item,
+        None,
+        Some(signed_delete(&id, &dedup)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn delete_with_wrong_key_is_403_and_annotation_survives() {
+    let app = app();
+    let (_author, ann) = signed_star(4.0);
+    let dedup = publish(&app, ann).await;
+    let item = format!("/annotations/{dedup}");
+
+    let stranger = Identity::generate();
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &item,
+        None,
+        Some(signed_delete(&stranger, &dedup)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "not the author's key");
+
+    // The annotation survives.
+    let (status, _h, _b) = send(&app, "GET", &item, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn delete_unknown_id_is_404_and_unsigned_is_401() {
+    let app = app();
+    let ghost = "0".repeat(64);
+    let doc = serde_json::json!({
+        "type": "Delete", "annotation": ghost, "created": "2026-07-05T12:00:00Z",
+    });
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &format!("/annotations/{ghost}"),
+        None,
+        Some(doc),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "never-seen id is a plain 404"
+    );
+
+    // An existing annotation + an unsigned document without a bearer → 401.
+    let (_id, ann) = signed_star(4.0);
+    let dedup = publish(&app, ann).await;
+    let doc = serde_json::json!({
+        "type": "Delete", "annotation": dedup, "created": "2026-07-05T12:00:00Z",
+    });
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &format!("/annotations/{dedup}"),
+        None,
+        Some(doc),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn malformed_delete_documents_are_400() {
+    let app = app();
+    let (id, ann) = signed_star(4.0);
+    let dedup = publish(&app, ann).await;
+    let item = format!("/annotations/{dedup}");
+
+    // Not a delete document at all.
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &item,
+        None,
+        Some(serde_json::json!({"x": 1})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Wrong type value.
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &item,
+        None,
+        Some(serde_json::json!({
+            "type": "Annotation", "annotation": dedup, "created": "2026-07-05T12:00:00Z",
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // The document's `annotation` must equal the path id.
+    let other = "f".repeat(64);
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &item,
+        None,
+        Some(signed_delete(&id, &other)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Nothing was erased by any of those.
+    let (status, _h, _b) = send(&app, "GET", &item, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn oauth_delete_requires_the_same_identity() {
+    // Two bearers → two distinct (app, user) identities on one server.
+    let store = Arc::new(MemoryStore::new());
+    let mut tokens = HashMap::new();
+    tokens.insert("tok-alice".to_string(), ("app-1".into(), "alice".into()));
+    tokens.insert("tok-bob".to_string(), ("app-1".into(), "bob".into()));
+    let app = build_app(AppState::new(store, BASE).with_oauth(tokens));
+
+    let ann = Annotation::new(
+        Motivation::Commenting,
+        Target::Iri("https://example.com/item/2".into()),
+        vec![FbBody::Comment {
+            value: "nice".into(),
+        }],
+    )
+    .with_created("2026-06-21T10:00:00Z");
+    let (status, _h, body) = send(
+        &app,
+        "POST",
+        "/annotations/",
+        Some("tok-alice"),
+        Some(serde_json::to_value(&ann).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let dedup = body["id"]
+        .as_str()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .to_string();
+    let item = format!("/annotations/{dedup}");
+    let doc = serde_json::json!({
+        "type": "Delete", "annotation": dedup, "created": "2026-07-05T12:00:00Z",
+    });
+
+    // A different OAuth user is not the creator → 403.
+    let (status, _h, _b) = send(&app, "DELETE", &item, Some("tok-bob"), Some(doc.clone())).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // A self-signed delete cannot erase an OAuth-authored annotation → 403.
+    let stranger = Identity::generate();
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &item,
+        None,
+        Some(signed_delete(&stranger, &dedup)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // The creator's own bearer erases it (no signature needed) → 204.
+    let (status, _h, _b) = send(&app, "DELETE", &item, Some("tok-alice"), Some(doc.clone())).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _h, _b) = send(&app, "GET", &item, None, None).await;
+    assert_eq!(status, StatusCode::GONE);
+
+    // And a bearer cannot erase a self-signed annotation (vice versa).
+    let (_id, signed) = signed_star(3.0);
+    let dedup2 = publish(&app, signed).await;
+    let doc2 = serde_json::json!({
+        "type": "Delete", "annotation": dedup2, "created": "2026-07-05T12:00:00Z",
+    });
+    let (status, _h, _b) = send(
+        &app,
+        "DELETE",
+        &format!("/annotations/{dedup2}"),
+        Some("tok-alice"),
+        Some(doc2),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn item_options_and_cors_advertise_delete() {
+    let app = app();
+    let (_id, ann) = signed_star(4.0);
+    let dedup = publish(&app, ann).await;
+
+    let (status, headers, _b) = send(
+        &app,
+        "OPTIONS",
+        &format!("/annotations/{dedup}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let allow = headers.get("allow").unwrap().to_str().unwrap();
+    assert!(allow.contains("DELETE"), "item Allow gains DELETE: {allow}");
 }
