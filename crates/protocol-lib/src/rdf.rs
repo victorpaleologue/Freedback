@@ -122,6 +122,11 @@ fn write_body(w: &mut Writer, b: &str, body: &Body) {
             w.string_literal(b, RDF_VALUE, value);
             w.iri_obj(b, &iri(OA, "hasPurpose"), &iri(OA, "tagging"));
         }
+        Body::Issue { value } => {
+            w.type_(b, &iri(OA, "TextualBody"));
+            w.string_literal(b, RDF_VALUE, value);
+            w.iri_obj(b, &iri(OA, "hasPurpose"), &iri(OA, "editing"));
+        }
     }
 }
 
@@ -148,6 +153,7 @@ fn motivation_iri(m: Motivation) -> String {
         Motivation::Assessing => iri(OA, "assessing"),
         Motivation::Commenting => iri(OA, "commenting"),
         Motivation::Tagging => iri(OA, "tagging"),
+        Motivation::Editing => iri(OA, "editing"),
     }
 }
 
@@ -273,6 +279,26 @@ mod tests {
         // Absent rights emits no dcterms:rights triple at all.
         let nt = to_ntriples(&base());
         assert!(!nt.contains("dc/terms/rights"));
+    }
+
+    #[test]
+    fn emits_issue_triples() {
+        // Issue / problem report (ADR 0023): plain oa:TextualBody triples with
+        // the standard oa:editing motivation/purpose — zero new vocabulary.
+        let ann = Annotation::new(
+            Motivation::Editing,
+            Target::Iri("https://example.com/x".into()),
+            vec![Body::issue("broken link")],
+        );
+        let nt = to_ntriples(&ann);
+        assert!(nt.contains("<http://www.w3.org/ns/oa#TextualBody>"));
+        assert!(nt.contains("\"broken link\"^^<http://www.w3.org/2001/XMLSchema#string>"));
+        assert!(
+            nt.contains("<http://www.w3.org/ns/oa#motivatedBy> <http://www.w3.org/ns/oa#editing>")
+        );
+        assert!(
+            nt.contains("<http://www.w3.org/ns/oa#hasPurpose> <http://www.w3.org/ns/oa#editing>")
+        );
     }
 
     #[test]

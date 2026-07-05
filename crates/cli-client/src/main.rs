@@ -32,7 +32,7 @@ mod cli {
 
     #[derive(Subcommand)]
     enum Cmd {
-        /// Sign and publish a rating/comment to a feedback server.
+        /// Sign and publish a rating/comment/issue to a feedback server.
         Write {
             #[arg(long)]
             server: String,
@@ -46,6 +46,12 @@ mod cli {
             thumb: Option<bool>,
             #[arg(long)]
             comment: Option<String>,
+            /// Report an issue / problem with the target (free text). Emits an
+            /// `oa:TextualBody` under the standard `oa:editing` motivation —
+            /// the problem-report feedback type (ADR 0023). Mutually exclusive
+            /// with the other body flags.
+            #[arg(long)]
+            issue: Option<String>,
             /// License IRI to distribute this feedback under (sets the W3C
             /// annotation `rights` property, e.g.
             /// `https://creativecommons.org/licenses/by/4.0/`). Optional —
@@ -109,6 +115,7 @@ mod cli {
                 scalar,
                 thumb,
                 comment,
+                issue,
                 license,
                 key_file,
             } => {
@@ -120,14 +127,12 @@ mod cli {
                     Body::thumb(up)
                 } else if let Some(text) = comment {
                     Body::Comment { value: text }
+                } else if let Some(text) = issue {
+                    Body::issue(text)
                 } else {
-                    return Err("provide one of --stars/--scalar/--thumb/--comment".into());
+                    return Err("provide one of --stars/--scalar/--thumb/--comment/--issue".into());
                 };
-                let motivation = if comment_is_set(&body) {
-                    Motivation::Commenting
-                } else {
-                    Motivation::Assessing
-                };
+                let motivation = motivation_for(&body);
                 let now = OffsetDateTime::now_utc().format(&Rfc3339)?;
                 let mut ann =
                     Annotation::new(motivation, Target::Iri(target), vec![body]).with_created(now);
@@ -190,8 +195,15 @@ mod cli {
         Ok(())
     }
 
-    fn comment_is_set(body: &Body) -> bool {
-        matches!(body, Body::Comment { .. } | Body::Tag { .. })
+    /// The motivation matching each body kind: textual bodies carry the
+    /// motivation their purpose names; every rating motivates `assessing`.
+    fn motivation_for(body: &Body) -> Motivation {
+        match body {
+            Body::Comment { .. } => Motivation::Commenting,
+            Body::Tag { .. } => Motivation::Tagging,
+            Body::Issue { .. } => Motivation::Editing,
+            _ => Motivation::Assessing,
+        }
     }
 
     /// The `--key-file` mechanism shared by `write` and `delete`: load the

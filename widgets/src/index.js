@@ -1,7 +1,7 @@
 // ESM entry for @freedback/widgets.
 //
-// Importing this module for its side effect registers the five custom elements
-// (`<freedback-stars/thumb/scalar/comment/tag>`) in the browser — exactly as the
+// Importing this module for its side effect registers the six custom elements
+// (`<freedback-stars/thumb/scalar/comment/issue/tag>`) in the browser — exactly as the
 // `<script>` build does — and re-exports the pure helper + identity API that the
 // canonical IIFE exposes via `module.exports`.
 //

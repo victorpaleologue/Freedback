@@ -724,6 +724,47 @@
     }
   }
 
+  // --- <freedback-issue> ---------------------------------------------------
+  // An issue / problem report (ADR 0023): free text published as an
+  // oa:TextualBody under the STANDARD oa:editing motivation ("request a change
+  // or edit to the Target resource") — zero new vocabulary. Full parity with
+  // <freedback-comment>: signed + bearer publish, data-license, outcome events,
+  // and the delete-own `×` (ADR 0021). Items get the `.fb-issue` styling (a ⚠
+  // marker via CSS).
+  class FreedbackIssue extends FreedbackEl {
+    render() {
+      this.innerHTML = `<div class="fb fb-issue">
+        ${this.publishUrl ? `<form class="fb-row"><textarea class="fb-in" rows="2" placeholder="Describe the problem…"></textarea><button>Report</button></form>` : ""}
+        <ul class="fb-list"></ul><span class="fb-status"></span></div>`;
+      const form = this.querySelector("form");
+      if (form) {
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const input = this.querySelector(".fb-in");
+          const value = input.value.trim();
+          if (!value) return;
+          input.value = "";
+          this.submit("editing", textBody(value, "editing"));
+        });
+      }
+    }
+    renderAggregate() {
+      const ul = this.querySelector(".fb-list");
+      ul.innerHTML = "";
+      for (const ann of this.annotations) {
+        const own = this.isOwn(ann) && this.canErase();
+        for (const text of textBodies(ann, "editing")) {
+          const li = document.createElement("li");
+          li.className = "fb-issue-item";
+          li.textContent = text;
+          // The visitor's OWN issue reports get a delete control (ADR 0021).
+          if (own) li.appendChild(this.deleteControl(dedupFromId(ann.id)));
+          ul.appendChild(li);
+        }
+      }
+    }
+  }
+
   // --- <freedback-tag> -----------------------------------------------------
   // A single tag per submission (oa:tagging). Renders the distinct tags seen.
   class FreedbackTag extends FreedbackEl {
@@ -772,6 +813,7 @@
   customElements.define("freedback-thumb", FreedbackThumb);
   customElements.define("freedback-scalar", FreedbackScalar);
   customElements.define("freedback-comment", FreedbackComment);
+  customElements.define("freedback-issue", FreedbackIssue);
   customElements.define("freedback-tag", FreedbackTag);
   } // defineElements
 

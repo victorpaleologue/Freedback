@@ -27,6 +27,12 @@ pub enum Motivation {
     Commenting,
     /// `oa:tagging` — a tag (`oa:TextualBody`).
     Tagging,
+    /// `oa:editing` — an issue / problem report (`oa:TextualBody`): the W3C
+    /// motivation "for when the user intends to request a change or edit to
+    /// the Target resource". This is the 2014 proto's `Issue` feedback type
+    /// (ADR 0023) expressed with zero new vocabulary. NOTE: `oa:flagging` was
+    /// considered but does NOT exist in the W3C Web Annotation vocabulary.
+    Editing,
 }
 
 /// The agent that issued an annotation (the `creator`).
@@ -110,6 +116,12 @@ pub enum Body {
     Comment { value: String },
     /// `oa:TextualBody` with `oa:tagging` purpose — a single tag.
     Tag { value: String },
+    /// `oa:TextualBody` with `oa:editing` purpose — an issue / problem report
+    /// (the third feedback kind from the 2014 proto, ADR 0023). A distinct
+    /// variant (rather than reusing [`Body::Comment`]) so the wire `purpose`
+    /// mirrors the annotation's motivation exactly like comments/tags do; the
+    /// serialization stays an ordinary `oa:TextualBody` — zero new vocabulary.
+    Issue { value: String },
 }
 
 impl Body {
@@ -132,6 +144,10 @@ impl Body {
     /// A thumbs-up / thumbs-down rating.
     pub fn thumb(up: bool) -> Self {
         Body::ThumbRating { up }
+    }
+    /// An issue / problem report (free text, `oa:editing`).
+    pub fn issue(text: impl Into<String>) -> Self {
+        Body::Issue { value: text.into() }
     }
 }
 
@@ -229,6 +245,15 @@ impl Serialize for Body {
                 format: Some("text/plain".into()),
                 purpose: Some("tagging".into()),
             },
+            Body::Issue { value } => BodyWire {
+                type_: TypeField::One("TextualBody".into()),
+                rating_value: None,
+                worst_rating: None,
+                best_rating: None,
+                value: Some(value.clone()),
+                format: Some("text/plain".into()),
+                purpose: Some("editing".into()),
+            },
         };
         wire.serialize(ser)
     }
@@ -258,6 +283,7 @@ impl<'de> Deserialize<'de> for Body {
             let value = w.value.unwrap_or_default();
             match w.purpose.as_deref() {
                 Some("tagging") => Ok(Body::Tag { value }),
+                Some("editing") => Ok(Body::Issue { value }),
                 _ => Ok(Body::Comment { value }),
             }
         } else {
