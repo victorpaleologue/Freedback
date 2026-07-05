@@ -26,13 +26,17 @@
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 
-use crate::CacheEntry;
+use crate::{CacheEntry, TombstoneState};
 
 const SERVERS: TableDefinition<&str, ()> = TableDefinition::new("servers");
 /// Append-only union log: monotonic u64 key -> JSON `(a, b, proof)`.
 const EQUIV_LOG: TableDefinition<u64, &str> = TableDefinition::new("equivalence_log");
 /// Cache entries keyed by `"<server>\n<uri>"` -> JSON [`StoredCacheEntry`].
 const CACHE: TableDefinition<&str, &str> = TableDefinition::new("cache");
+/// Per-upstream erasure state (ADR 0021) keyed by server base URL -> JSON
+/// [`StoredTombstoneState`]. Additive: databases from before this table exist
+/// get it created on open.
+const TOMBSTONES: TableDefinition<&str, &str> = TableDefinition::new("tombstones");
 
 /// The serializable projection of a [`CacheEntry`] (everything except the
 /// non-portable `fresh_until` `Instant`).
@@ -41,6 +45,14 @@ pub(crate) struct StoredCacheEntry {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub items: Vec<freedback_protocol::Annotation>,
+}
+
+/// The serializable projection of a [`TombstoneState`] (the `HashSet` becomes
+/// a sorted `Vec` for deterministic storage).
+#[derive(Serialize, Deserialize)]
+pub(crate) struct StoredTombstoneState {
+    pub cursor: i64,
+    pub ids: Vec<String>,
 }
 
 /// A durable store for the aggregator's derived state.
@@ -76,6 +88,7 @@ impl PersistStore {
             w.open_table(SERVERS).map_err(err)?;
             w.open_table(EQUIV_LOG).map_err(err)?;
             w.open_table(CACHE).map_err(err)?;
+            w.open_table(TOMBSTONES).map_err(err)?;
         }
         w.commit().map_err(err)?;
         Ok(Self { db })
@@ -128,6 +141,23 @@ impl PersistStore {
         w.commit().map_err(err)
     }
 
+    /// Store (upsert) the per-upstream erasure state for `server`.
+    pub(crate) fn put_tombstones(&self, server: &str, state: &TombstoneState) -> Result<()> {
+        let mut ids: Vec<String> = state.ids.iter().cloned().collect();
+        ids.sort();
+        let stored = StoredTombstoneState {
+            cursor: state.cursor,
+            ids,
+        };
+        let json = serde_json::to_string(&stored).map_err(err)?;
+        let w = self.db.begin_write().map_err(err)?;
+        {
+            let mut t = w.open_table(TOMBSTONES).map_err(err)?;
+            t.insert(server, json.as_str()).map_err(err)?;
+        }
+        w.commit().map_err(err)
+    }
+
     // --- reads (replay on boot) --------------------------------------------
 
     /// Every persisted server base URL.
@@ -175,6 +205,25 @@ impl PersistStore {
                     last_modified: stored.last_modified,
                     fresh_until: None,
                     items: stored.items,
+                },
+            ));
+        }
+        Ok(out)
+    }
+
+    /// Every persisted per-upstream erasure state as `(server, state)`.
+    pub(crate) fn tombstone_states(&self) -> Result<Vec<(String, TombstoneState)>> {
+        let r = self.db.begin_read().map_err(err)?;
+        let t = r.open_table(TOMBSTONES).map_err(err)?;
+        let mut out = Vec::new();
+        for item in t.iter().map_err(err)? {
+            let (k, v) = item.map_err(err)?;
+            let stored: StoredTombstoneState = serde_json::from_str(v.value()).map_err(err)?;
+            out.push((
+                k.value().to_string(),
+                TombstoneState {
+                    cursor: stored.cursor,
+                    ids: stored.ids.into_iter().collect(),
                 },
             ));
         }

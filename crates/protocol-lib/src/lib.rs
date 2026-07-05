@@ -30,6 +30,7 @@
 
 pub mod canonical;
 pub mod context;
+pub mod erasure;
 pub mod error;
 pub mod export;
 pub mod identity;
@@ -46,9 +47,10 @@ pub mod jsonld_full;
 pub mod validation;
 
 pub use canonical::{canonical_bytes, canonical_json, dedup_id};
+pub use erasure::{verify_delete, DeleteRequest};
 pub use error::{Error, Result};
 pub use export::{from_jwt, to_jwt};
-pub use identity::{verify_annotation, Identity};
+pub use identity::{issuer_id_from_pem, verify_annotation, Identity};
 pub use jsonld::from_jsonld;
 pub use mangrove::{from_mangrove_jwt, to_mangrove_jwt};
 pub use model::{Annotation, Body, Creator, Motivation, Selector, Signature, Target};

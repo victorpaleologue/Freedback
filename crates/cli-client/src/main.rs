@@ -46,6 +46,31 @@ mod cli {
             thumb: Option<bool>,
             #[arg(long)]
             comment: Option<String>,
+            /// Reuse (or create) a persistent identity instead of a fresh
+            /// throwaway one — load the PKCS#8 PEM keypair from this file if
+            /// it exists, otherwise generate one and save it here. Lets later
+            /// calls act as the SAME issuer: a newer `write` for the same
+            /// target supersedes the older one (edit), and `delete` erases a
+            /// post outright — it must be signed with the same key that wrote
+            /// it (right to erasure, ADR 0021).
+            #[arg(long)]
+            key_file: Option<std::path::PathBuf>,
+        },
+        /// Erase a previously published annotation (right to erasure, ADR
+        /// 0021). Signs a delete document with the SAME key that signed the
+        /// annotation; the server removes the content and keeps only a
+        /// content-free tombstone.
+        Delete {
+            #[arg(long)]
+            server: String,
+            /// The annotation's dedup id, or the full `…/annotations/<id>`
+            /// URL as printed by `write`.
+            #[arg(long)]
+            id: String,
+            /// The PKCS#8 PEM keypair that signed the annotation (the file
+            /// `write --key-file` saved). A different key is refused (403).
+            #[arg(long)]
+            key_file: std::path::PathBuf,
         },
         /// Read aggregated feedback for a target.
         Read {
@@ -77,6 +102,7 @@ mod cli {
                 scalar,
                 thumb,
                 comment,
+                key_file,
             } => {
                 let body = if let Some(v) = stars {
                     Body::star(v)
@@ -97,8 +123,12 @@ mod cli {
                 let now = OffsetDateTime::now_utc().format(&Rfc3339)?;
                 let mut ann =
                     Annotation::new(motivation, Target::Iri(target), vec![body]).with_created(now);
-                // Self-signed identity (ephemeral for the demo CLI).
-                let id = Identity::generate();
+                // Self-signed identity: ephemeral by default, or loaded/saved
+                // from --key-file so repeated invocations share one issuer.
+                let id = match &key_file {
+                    Some(path) => load_or_init_identity(path)?,
+                    None => Identity::generate(),
+                };
                 ann.creator = Some(freedback_protocol::Creator::new(id.issuer_id()?));
                 id.sign_annotation(&mut ann)?;
 
@@ -108,6 +138,21 @@ mod cli {
                 };
                 let stored = client.write(&ann, &dest).await?;
                 println!("{}", serde_json::to_string_pretty(&stored)?);
+            }
+            Cmd::Delete {
+                server,
+                id,
+                key_file,
+            } => {
+                let dedup = freedback_cli_client::dedup_id_from_url(&id).to_string();
+                let identity = load_or_init_identity(&key_file)?;
+                let now = OffsetDateTime::now_utc().format(&Rfc3339)?;
+                let mut doc = freedback_protocol::DeleteRequest::new(&dedup, now);
+                identity.sign_delete(&mut doc)?;
+                client
+                    .delete(&PublicationPoint::from_server(&server), &doc, None)
+                    .await?;
+                println!("deleted {dedup}");
             }
             Cmd::Read { server, target } => {
                 let anns = client
@@ -133,5 +178,20 @@ mod cli {
 
     fn comment_is_set(body: &Body) -> bool {
         matches!(body, Body::Comment { .. } | Body::Tag { .. })
+    }
+
+    /// The `--key-file` mechanism shared by `write` and `delete`: load the
+    /// PKCS#8 PEM keypair from `path` if it exists, otherwise generate a fresh
+    /// identity and save it there.
+    fn load_or_init_identity(
+        path: &std::path::Path,
+    ) -> Result<Identity, Box<dyn std::error::Error>> {
+        if path.exists() {
+            Ok(Identity::from_pkcs8_pem(&std::fs::read_to_string(path)?)?)
+        } else {
+            let id = Identity::generate();
+            std::fs::write(path, id.to_pkcs8_pem()?)?;
+            Ok(id)
+        }
     }
 }

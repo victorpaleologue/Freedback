@@ -23,9 +23,17 @@ impl ApiError {
     pub fn unauthorized(msg: impl Into<String>) -> Self {
         ApiError::Status(StatusCode::UNAUTHORIZED, msg.into())
     }
+    /// 403 Forbidden (authenticated, but not the owner).
+    pub fn forbidden(msg: impl Into<String>) -> Self {
+        ApiError::Status(StatusCode::FORBIDDEN, msg.into())
+    }
     /// 404 Not Found.
     pub fn not_found(msg: impl Into<String>) -> Self {
         ApiError::Status(StatusCode::NOT_FOUND, msg.into())
+    }
+    /// 410 Gone (erased — a tombstone exists for this id, ADR 0021).
+    pub fn gone(msg: impl Into<String>) -> Self {
+        ApiError::Status(StatusCode::GONE, msg.into())
     }
     /// 406 Not Acceptable (content negotiation failed).
     pub fn not_acceptable(msg: impl Into<String>) -> Self {
@@ -73,7 +81,14 @@ impl IntoResponse for ApiError {
 
 impl From<freedback_storage::StoreError> for ApiError {
     fn from(e: freedback_storage::StoreError) -> Self {
-        ApiError::internal(format!("storage: {e}"))
+        match e {
+            // A write hitting a tombstone is the caller's problem, not ours:
+            // deleted content cannot resurrect (ADR 0021) → `410 Gone`.
+            freedback_storage::StoreError::Tombstoned(id) => {
+                ApiError::gone(format!("annotation {id} was deleted"))
+            }
+            other => ApiError::internal(format!("storage: {other}")),
+        }
     }
 }
 

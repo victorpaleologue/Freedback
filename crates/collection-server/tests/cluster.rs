@@ -191,6 +191,66 @@ async fn fresh_cache_serves_without_any_upstream_call() {
     );
 }
 
+/// The collection server honors upstream tombstones (ADR 0021): an annotation
+/// erased at its feedback server disappears from the collection index on the
+/// next poll.
+#[tokio::test]
+async fn tombstones_evict_deleted_annotations() {
+    // Keep the author's key so the delete can be signed with the SAME identity.
+    let author = Identity::generate();
+    let mut ann = Annotation::new(
+        Motivation::Assessing,
+        Target::Iri(A.into()),
+        vec![Body::star(4.0)],
+    )
+    .with_created("2026-06-21T10:00:00Z")
+    .with_creator(Creator::new(author.issuer_id().unwrap()));
+    author.sign_annotation(&mut ann).unwrap();
+    let dedup = freedback_protocol::dedup_id(&ann).unwrap();
+
+    // max-age=0: every /index query revalidates upstream (and pulls tombstones).
+    let fb = spawn_feedback_maxage(std::slice::from_ref(&ann), 0).await;
+    let (col, state) = spawn_collection(RateLimit::default()).await;
+    state.add_server(&fb);
+    let http = reqwest::Client::new();
+
+    // The collection polls and sees it.
+    let idx: Value = http
+        .get(format!("{col}/index?target={A}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(idx["total"], 1, "published annotation is indexed");
+
+    // The author erases it at the upstream feedback server.
+    let mut doc = freedback_protocol::DeleteRequest::new(&dedup, "2026-07-05T12:00:00Z");
+    author.sign_delete(&mut doc).unwrap();
+    let resp = http
+        .delete(format!("{fb}/annotations/{dedup}"))
+        .json(&doc)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 204, "upstream delete succeeds");
+
+    // The next poll pulls the tombstone feed and evicts the cached copy.
+    let idx: Value = http
+        .get(format!("{col}/index?target={A}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        idx["total"], 0,
+        "the collection index no longer returns the erased annotation"
+    );
+}
+
 #[tokio::test]
 async fn rate_limiter_caps_upstream_bursts() {
     // max-age=0 so every query must revalidate (and thus spend a token) — this

@@ -19,6 +19,10 @@ use crate::AppState;
 /// the body of an `OPTIONS` response (W3C WAP / LDP §4.2.8).
 pub const CONTAINER_ALLOW: &str = "GET, HEAD, POST, OPTIONS";
 
+/// Methods a single `/annotations/{id}` item accepts. `DELETE` is the WAP verb
+/// for the author's right to erasure (ADR 0021).
+pub const ITEM_ALLOW: &str = "GET, HEAD, DELETE, OPTIONS";
+
 /// Whether an `Accept` header is satisfiable by our JSON-LD representation.
 ///
 /// We serve `application/ld+json` (a JSON subtype). A request is acceptable if
@@ -389,6 +393,9 @@ pub async fn submit_mangrove(
 }
 
 /// `GET /annotations/{id}` — single annotation by dedup id.
+///
+/// An erased annotation answers `410 Gone` (a tombstone exists — ADR 0021),
+/// distinguishing "deleted by its author" from a plain `404` never-seen id.
 pub async fn get_one(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -396,10 +403,142 @@ pub async fn get_one(
     match state.store.get(&id).await? {
         Some(mut ann) => {
             ann.id = Some(format!("{}/annotations/{}", state.base_url, id));
-            Ok(Json(ann))
+            let mut headers = HeaderMap::new();
+            headers.insert(ALLOW, HeaderValue::from_static(ITEM_ALLOW));
+            Ok((headers, Json(ann)))
+        }
+        None if state.store.is_tombstoned(&id).await? => {
+            Err(ApiError::gone("annotation was deleted"))
         }
         None => Err(ApiError::not_found("annotation not found")),
     }
+}
+
+/// `OPTIONS /annotations/{id}` — advertise the methods an item supports
+/// (including `DELETE`, the right-to-erasure verb).
+pub async fn options_item() -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    headers.insert(ALLOW, HeaderValue::from_static(ITEM_ALLOW));
+    (StatusCode::NO_CONTENT, headers)
+}
+
+/// `DELETE /annotations/{dedup_id}` — the author's right to erasure (ADR 0021).
+///
+/// The body is a delete document `{"type":"Delete","annotation":"<dedup_id>",
+/// "created":"<RFC3339>"}`; authorization matches the identity that created the
+/// annotation:
+///
+/// * **Self-signed annotations** — the document carries a detached ES256
+///   signature over its JCS canonical bytes; it must verify AND its key must be
+///   the same identity that signed the annotation (derived issuer id equals the
+///   annotation's `creator.id`, or the `kid`s are equal). `403` otherwise.
+/// * **OAuth annotations** — a valid bearer resolving to the same
+///   `(app_id, user_id)` creator; the document may omit the signature. `403`
+///   on a creator mismatch (including a bearer trying to erase a self-signed
+///   annotation, and vice versa).
+///
+/// On success the content is erased and a content-free tombstone retained;
+/// the response is `204 No Content`. Deleting an **already-erased** id is
+/// idempotent: `204` again. An id never seen at all is `404`.
+pub async fn delete_one(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(value): Json<Value>,
+) -> Result<axum::response::Response, ApiError> {
+    let doc: freedback_protocol::DeleteRequest = serde_json::from_value(value)
+        .map_err(|e| ApiError::bad_request(format!("invalid delete document: {e}")))?;
+    if doc.type_ != freedback_protocol::erasure::DELETE_TYPE {
+        return Err(ApiError::bad_request(format!(
+            "delete document type must be \"Delete\", got {:?}",
+            doc.type_
+        )));
+    }
+    if doc.annotation != id {
+        return Err(ApiError::bad_request(
+            "the document's `annotation` must equal the dedup id in the path",
+        ));
+    }
+
+    let Some(ann) = state.store.get(&id).await? else {
+        if state.store.is_tombstoned(&id).await? {
+            // Idempotent: already erased. Re-affirm with 204, not an error.
+            return Ok(no_content_with_allow());
+        }
+        return Err(ApiError::not_found("annotation not found"));
+    };
+
+    match crate::auth::oauth_authz(&state.oauth, &headers)? {
+        // OAuth path: the bearer's app-scoped creator must be the annotation's.
+        Some(authz) => {
+            let creator = authz
+                .oauth_creator()
+                .expect("oauth_authz only yields OAuth identities");
+            if ann.creator.as_ref().map(|c| c.id.as_str()) != Some(creator.id.as_str()) {
+                return Err(ApiError::forbidden(
+                    "bearer identity is not the annotation's creator",
+                ));
+            }
+        }
+        // Self-signed path: same canonicalization, same scheme, same key as
+        // the annotation itself (protocol-lib::erasure).
+        None => {
+            if doc.signature.is_none() {
+                return Err(ApiError::unauthorized(
+                    "no bearer token and the delete document is unsigned",
+                ));
+            }
+            let issuer = freedback_protocol::verify_delete(&doc)
+                .map_err(|_| ApiError::forbidden("delete signature verification failed"))?;
+            let creator_matches =
+                ann.creator.as_ref().map(|c| c.id.as_str()) == Some(issuer.as_str());
+            let kid_matches = match (&ann.signature, &doc.signature) {
+                (Some(a), Some(d)) => a.kid == d.kid,
+                _ => false,
+            };
+            if !(creator_matches || kid_matches) {
+                return Err(ApiError::forbidden(
+                    "the delete key is not the annotation's creator",
+                ));
+            }
+        }
+    }
+
+    let deleted_at = time::OffsetDateTime::now_utc().unix_timestamp();
+    let proof = serde_json::to_value(&doc)?;
+    state.store.delete(&id, deleted_at, proof).await?;
+    Ok(no_content_with_allow())
+}
+
+/// A `204 No Content` carrying the item `Allow` header.
+fn no_content_with_allow() -> axum::response::Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(ALLOW, HeaderValue::from_static(ITEM_ALLOW));
+    (StatusCode::NO_CONTENT, headers).into_response()
+}
+
+/// Query parameters of `GET /tombstones`.
+#[derive(Debug, Deserialize)]
+pub struct TombstoneParams {
+    /// Exclusive cursor: only tombstones with `deleted_at > gt_deleted_at`.
+    pub gt_deleted_at: Option<i64>,
+}
+
+/// `GET /tombstones?gt_deleted_at=` — the erasure propagation feed (ADR 0021).
+///
+/// Returns the content-free tombstones (`{dedup_id, deleted_at, proof}`)
+/// ordered by `deleted_at` ascending, so sync consumers (collection servers,
+/// advanced clients) can evict erased annotations using `deleted_at` as their
+/// cursor. Additive endpoint: the `/sync` item shape is unchanged.
+pub async fn get_tombstones(
+    State(state): State<AppState>,
+    Query(p): Query<TombstoneParams>,
+) -> Result<Json<Value>, ApiError> {
+    let tombs = state
+        .store
+        .tombstones(p.gt_deleted_at.unwrap_or(i64::MIN))
+        .await?;
+    Ok(Json(json!(tombs)))
 }
 
 /// `GET /sync?target=&gt_iat=&latest_edits_only=` — incremental cursor.
@@ -500,7 +639,7 @@ pub async fn well_known(State(state): State<AppState>) -> Json<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "protocol": "freedback/1",
         "formats": ["application/ld+json"],
-        "capabilities": ["wap-container", "sync-cursor", "jws-identity", "oauth-identity", "jwt-export", "mangrove-review", "batch-multistatus", "negentropy"],
+        "capabilities": ["wap-container", "sync-cursor", "jws-identity", "oauth-identity", "jwt-export", "mangrove-review", "batch-multistatus", "negentropy", "erasure"],
         "conformsTo": "https://freedback.net/profile/1",
         "links": [
             { "rel": "self", "href": format!("{}/.well-known/freedback", state.base_url) },

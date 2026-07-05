@@ -32,6 +32,11 @@ pub enum StoreError {
     /// JSON (de)serialization of a stored annotation failed.
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    /// A `put` was rejected because the dedup id is tombstoned (erased — ADR
+    /// 0021). Deleted content must not resurrect through re-POSTs, gossip, or
+    /// reconciliation; the server maps this to `410 Gone`.
+    #[error("annotation {0} was deleted (tombstoned)")]
+    Tombstoned(String),
     /// A backend-specific failure.
     #[error("backend error: {0}")]
     Backend(String),
@@ -58,6 +63,24 @@ pub struct Query {
     pub page: usize,
     /// Page size (items per page). `0` is treated as "all".
     pub page_size: usize,
+}
+
+/// A content-free deletion marker (ADR 0021 — right to erasure).
+///
+/// On deletion the annotation's content (body, target, creator, timestamps) is
+/// **removed**; only this marker remains so the erasure itself can propagate to
+/// sync consumers and so the dedup id cannot be re-`put`. `proof` is the delete
+/// document that authorized the erasure (`{type, annotation, created}` +
+/// optional detached signature) — it carries no feedback content and no
+/// personal data beyond the issuer's already-public key.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Tombstone {
+    /// The erased annotation's content-addressed dedup id.
+    pub dedup_id: String,
+    /// Unix timestamp of the deletion — the tombstone feed's cursor position.
+    pub deleted_at: i64,
+    /// The authorizing delete document (content-free).
+    pub proof: serde_json::Value,
 }
 
 /// A page of annotations plus collection metadata.
@@ -95,9 +118,37 @@ pub trait FeedbackStore: Send + Sync {
         latest_edits_only: bool,
     ) -> Result<Vec<Annotation>>;
 
-    /// Snapshot every stored annotation to a JSON-Lines file (one annotation per
-    /// line). Backend-agnostic; used for durable "demo" persistence on top of
-    /// the in-memory backends (see ADR 0008). Returns the number written.
+    /// Erase the annotation with this dedup id (ADR 0021), leaving a
+    /// content-free [`Tombstone`] `{dedup_id, deleted_at, proof}` behind.
+    ///
+    /// Semantics (shared by every backend, exercised by the conformance suite):
+    /// * the tombstone is recorded whether or not the annotation was present
+    ///   (so an erasure can be replayed / arrive before the content it erases),
+    ///   but an **existing** tombstone is never overwritten (first delete wins);
+    /// * returns `true` iff an annotation was actually removed;
+    /// * a subsequent [`put`](FeedbackStore::put) of the same dedup id fails
+    ///   with [`StoreError::Tombstoned`].
+    async fn delete(
+        &self,
+        dedup_id: &str,
+        deleted_at: i64,
+        proof: serde_json::Value,
+    ) -> Result<bool>;
+
+    /// Whether this dedup id has been erased (a tombstone exists).
+    async fn is_tombstoned(&self, dedup_id: &str) -> Result<bool>;
+
+    /// Tombstones with `deleted_at > gt_deleted_at`, ordered by `deleted_at`
+    /// ascending then dedup id — the erasure propagation feed (`deleted_at` is
+    /// the cursor position).
+    async fn tombstones(&self, gt_deleted_at: i64) -> Result<Vec<Tombstone>>;
+
+    /// Snapshot every stored annotation (one per line) followed by every
+    /// tombstone (as `{"type":"Tombstone",...}` lines) to a JSON-Lines file.
+    /// Backend-agnostic; used for durable "demo" persistence on top of the
+    /// in-memory backends (see ADR 0008). Returns the number of annotations
+    /// written (tombstone lines are additive and not counted, so pre-erasure
+    /// callers see unchanged totals).
     async fn dump_jsonl(&self, path: &str) -> Result<usize> {
         use std::io::Write;
         let page = self.query(&Query::default()).await?;
@@ -106,11 +157,19 @@ pub trait FeedbackStore: Send + Sync {
             writeln!(f, "{}", serde_json::to_string(ann)?)
                 .map_err(|e| StoreError::Backend(e.to_string()))?;
         }
+        for t in self.tombstones(i64::MIN).await? {
+            let mut v = serde_json::to_value(&t)?;
+            v["type"] = serde_json::Value::String("Tombstone".into());
+            writeln!(f, "{v}").map_err(|e| StoreError::Backend(e.to_string()))?;
+        }
         Ok(page.items.len())
     }
 
-    /// Load a JSON-Lines snapshot, `put`-ing each annotation (idempotent). A
-    /// missing file is treated as empty. Returns the number newly inserted.
+    /// Load a JSON-Lines snapshot, `put`-ing each annotation and re-recording
+    /// each tombstone (both idempotent). Old snapshot files (annotations only)
+    /// load unchanged; an annotation line whose dedup id is tombstoned is
+    /// skipped rather than failing the load. A missing file is treated as
+    /// empty. Returns the number of annotations newly inserted.
     async fn load_jsonl(&self, path: &str) -> Result<usize> {
         let data = match std::fs::read_to_string(path) {
             Ok(d) => d,
@@ -119,9 +178,18 @@ pub trait FeedbackStore: Send + Sync {
         };
         let mut new = 0;
         for line in data.lines().filter(|l| !l.trim().is_empty()) {
-            let ann: Annotation = serde_json::from_str(line)?;
-            if self.put(&ann).await?.created {
-                new += 1;
+            let v: serde_json::Value = serde_json::from_str(line)?;
+            if v.get("type").and_then(serde_json::Value::as_str) == Some("Tombstone") {
+                let t: Tombstone = serde_json::from_value(v)?;
+                self.delete(&t.dedup_id, t.deleted_at, t.proof).await?;
+                continue;
+            }
+            let ann: Annotation = serde_json::from_value(v)?;
+            match self.put(&ann).await {
+                Ok(outcome) if outcome.created => new += 1,
+                Ok(_) => {}
+                Err(StoreError::Tombstoned(_)) => {} // erased content stays erased
+                Err(e) => return Err(e),
             }
         }
         Ok(new)
@@ -168,6 +236,15 @@ impl Record {
 /// Order records by `iat` ascending, breaking ties by dedup id for determinism.
 pub(crate) fn order_records(records: &mut [Record]) {
     records.sort_by(|a, b| a.iat.cmp(&b.iat).then_with(|| a.dedup_id.cmp(&b.dedup_id)));
+}
+
+/// Order tombstones by `deleted_at` ascending, then dedup id (determinism).
+pub(crate) fn order_tombstones(tombstones: &mut [Tombstone]) {
+    tombstones.sort_by(|a, b| {
+        a.deleted_at
+            .cmp(&b.deleted_at)
+            .then_with(|| a.dedup_id.cmp(&b.dedup_id))
+    });
 }
 
 /// Collapse to the latest record per `(issuer, target)` (highest `iat`, then

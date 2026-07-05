@@ -37,6 +37,9 @@ pub trait Transport {
     async fn get(&self, url: &str) -> Result<String>;
     /// POST a JSON body (as `application/ld+json`) and return the response text.
     async fn post_json(&self, url: &str, body: &str, bearer: Option<&str>) -> Result<String>;
+    /// DELETE a URL with a JSON body (a delete document, ADR 0021); returns the
+    /// response text (empty on the server's `204 No Content`).
+    async fn delete_json(&self, url: &str, body: &str, bearer: Option<&str>) -> Result<String>;
 }
 
 /// A `reqwest`-backed transport (native + wasm/Fetch).
@@ -84,6 +87,30 @@ impl Transport for ReqwestTransport {
             .client
             .post(url)
             .header("content-type", "application/ld+json")
+            .body(body.to_string());
+        if let Some(token) = bearer {
+            req = req.bearer_auth(token);
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ClientError::Http(e.to_string()))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| ClientError::Http(e.to_string()))?;
+        if !status.is_success() {
+            return Err(ClientError::Http(format!("{status}: {text}")));
+        }
+        Ok(text)
+    }
+
+    async fn delete_json(&self, url: &str, body: &str, bearer: Option<&str>) -> Result<String> {
+        let mut req = self
+            .client
+            .delete(url)
+            .header("content-type", "application/json")
             .body(body.to_string());
         if let Some(token) = bearer {
             req = req.bearer_auth(token);
@@ -211,6 +238,31 @@ impl<T: Transport> Client<T> {
         }
     }
 
+    /// Erase a previously published annotation (right to erasure, ADR 0021):
+    /// `DELETE {server}/annotations/{dedup_id}` carrying the (usually signed)
+    /// delete document. The server answers `204 No Content` on success, `403`
+    /// when the document's key is not the annotation's creator, `410` when the
+    /// id was already erased longer ago, and `404` for an unknown id.
+    pub async fn delete(
+        &self,
+        point: &PublicationPoint,
+        doc: &freedback_protocol::DeleteRequest,
+        bearer: Option<&str>,
+    ) -> Result<()> {
+        // `point.url` is the POST-to-container URL (`…/annotations/`); the item
+        // resource lives directly beneath it.
+        let url = format!(
+            "{}/{}",
+            point.url.trim_end_matches('/'),
+            doc.annotation.trim_start_matches('/')
+        );
+        let body = serde_json::to_string(doc)?;
+        self.transport
+            .delete_json(&url, &body, bearer)
+            .await
+            .map(|_| ())
+    }
+
     /// One round of NIP-77-style negentropy reconciliation against a server's
     /// `POST /negentropy`. Posts the client's range message for `target` and
     /// returns the server's reply. The server is read-only over its set, so the
@@ -305,6 +357,16 @@ fn negentropy_url(sync_url: &str) -> Result<String> {
 /// (which ends in `/annotations/`).
 fn by_id_url(annotations_url: &str) -> String {
     format!("{}/by-id", annotations_url.trim_end_matches('/'))
+}
+
+/// Reduce a full `…/annotations/<dedup_id>` annotation URL (as printed by
+/// `write`) to the bare dedup id; anything without an `/annotations/` segment
+/// passes through unchanged.
+pub fn dedup_id_from_url(id_or_url: &str) -> &str {
+    match id_or_url.rsplit_once("/annotations/") {
+        Some((_, tail)) => tail.trim_end_matches('/'),
+        None => id_or_url,
+    }
 }
 
 /// Minimal percent-encoding for query values.
