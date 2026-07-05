@@ -1,0 +1,132 @@
+name: Smoke test (production)
+
+# End-to-end integration test against the REAL deployments — the live webpage,
+# the live discovery server, and the live feedback backend:
+#
+#   * the static site (freedback.net: landing page, pinned @context, widgets)
+#   * the feedback server (publish → read → author-signed DELETE — ADR 0021)
+#   * the discovery server (announce + live resolve of the target we published)
+#
+# The lifecycle uses a throwaway P-256 key minted inside the run and ERASES its
+# own annotation before finishing (right to erasure), so production is left
+# clean. A trap guarantees the delete runs even if an assertion in between
+# fails. No secrets needed — deletion is authorized by authorship, not by an
+# operator credential.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1" # weekly drift check (Mon 06:17 UTC)
+  workflow_run:
+    workflows: ["Deploy (Fly.io)"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+env:
+  SITE: https://freedback.net
+  FEEDBACK: https://freedback-demo.fly.dev
+  DISCOVERY: https://freedback-discovery.fly.dev
+  # Scale-to-zero apps cold-start on first contact — retry generously.
+  CURL: curl --silent --show-error --fail --max-time 30 --retry 5 --retry-delay 3 --retry-all-errors
+
+jobs:
+  smoke:
+    name: site + discovery + backend lifecycle
+    runs-on: ubuntu-latest
+    # On workflow_run, only test after a SUCCESSFUL deploy.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Site — landing page + pinned artifacts + widgets script
+        run: |
+          $CURL "$SITE/" | grep -qi "freedback"
+          $CURL "$SITE/ns/context.jsonld" | jq -e '."@context"' > /dev/null
+          $CURL "$SITE/widgets/freedback-widgets.js" | head -c 100 | grep -q .
+          $CURL "$SITE/demo/" | grep -qi "freedback"
+          echo "site OK"
+
+      - name: Backend — wake up + erasure capability advertised
+        run: |
+          $CURL "$FEEDBACK/.well-known/freedback" | tee /tmp/wk.json | jq -e '.capabilities | index("erasure")' > /dev/null
+          echo "feedback server OK (erasure capable)"
+
+      - name: Discovery — announce the feedback server, listed in /servers
+        run: |
+          $CURL -X POST "$DISCOVERY/announce" \
+            -H 'content-type: application/json' \
+            -d "{\"url\": \"$FEEDBACK\"}" | jq .
+          $CURL "$DISCOVERY/servers" | jq -e --arg s "$FEEDBACK" \
+            '.. | strings | select(startswith($s))' | head -1 | grep -q .
+          echo "discovery OK"
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: prod-smoke
+      - name: Build the CLI
+        run: cargo build --release -p freedback-cli-client
+
+      - name: Lifecycle — publish → read → resolve → wrong-key 403 → erase → verify gone
+        run: |
+          set -euo pipefail
+          CLI=target/release/freedback
+          TARGET="https://freedback.net/smoke/${{ github.run_id }}"
+          KEY=/tmp/smoke-key.pem
+
+          # 1) Publish a signed rating with a persistent (run-local) identity.
+          $CLI write --server "$FEEDBACK" --target "$TARGET" --key-file "$KEY" --stars 5 \
+            | tee /tmp/stored.json
+          ANN_ID_URL=$(jq -r .id /tmp/stored.json)
+          DEDUP=$(basename "$ANN_ID_URL")
+          echo "published dedup_id=$DEDUP"
+          # NOTE: the server mints ids under its FREEDBACK_BASE_URL, which may be
+          # a branded host without DNS yet — never fetch ANN_ID_URL directly;
+          # always re-target the bare dedup id at $FEEDBACK.
+
+          # From here on, guarantee erasure even if an assertion below fails.
+          DELETED=0
+          cleanup() {
+            if [ "$DELETED" != 1 ]; then
+              echo "cleanup: erasing $DEDUP"
+              $CLI delete --server "$FEEDBACK" --id "$DEDUP" --key-file "$KEY" || true
+            fi
+          }
+          trap cleanup EXIT
+
+          # 2) Read back: the collection for the target contains exactly our item.
+          $CLI read --server "$FEEDBACK" --target "$TARGET" | tee /tmp/read1.json
+          test "$(jq 'length' /tmp/read1.json)" = "1"
+          $CURL "$FEEDBACK/annotations/$DEDUP" | jq -e .target > /dev/null
+
+          # 3) Discovery resolve: live federation query — the registry verifies
+          #    against the real backend that it holds feedback for our target.
+          ENC_TARGET=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$TARGET")
+          $CURL "$DISCOVERY/resolve?target=$ENC_TARGET" | tee /tmp/resolve.json
+          jq -e --arg s "$FEEDBACK" '.. | strings | select(startswith($s))' /tmp/resolve.json | head -1 | grep -q .
+
+          # 4) Ownership check: a DIFFERENT key must NOT be able to erase it.
+          if $CLI delete --server "$FEEDBACK" --id "$DEDUP" --key-file /tmp/wrong-key.pem; then
+            echo "ERROR: delete with a non-author key was accepted" >&2
+            exit 1
+          fi
+          echo "wrong-key delete correctly refused"
+          # ...and the annotation survived the refused attempt.
+          test "$($CLI read --server "$FEEDBACK" --target "$TARGET" | jq 'length')" = "1"
+
+          # 5) The author erases their own annotation (right to erasure).
+          $CLI delete --server "$FEEDBACK" --id "$DEDUP" --key-file "$KEY"
+          DELETED=1
+          echo "erased"
+
+          # 6) Verify gone everywhere it should be:
+          test "$($CLI read --server "$FEEDBACK" --target "$TARGET" | jq 'length')" = "0"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$FEEDBACK/annotations/$DEDUP")
+          test "$CODE" = "410"
+          $CURL "$FEEDBACK/tombstones?gt_deleted_at=0" \
+            | jq -e --arg id "$DEDUP" '.[] | select(.dedup_id == $id)' > /dev/null
+          echo "lifecycle OK — production left clean"
