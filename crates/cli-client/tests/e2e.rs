@@ -82,6 +82,65 @@ async fn write_read_sync_roundtrip() {
     assert!(none.is_empty());
 }
 
+/// The `write --key-file` → `delete` ownership roundtrip (ADR 0021): the key
+/// persisted at write time is what authorizes the erasure later — and a
+/// different key is refused.
+#[tokio::test]
+async fn write_then_delete_roundtrip_with_key_file() {
+    let base = spawn_server().await;
+    let client = Client::new(ReqwestTransport::new());
+    let dir = tempfile::tempdir().unwrap();
+    let key_file = dir.path().join("identity.pem");
+
+    // write with --key-file semantics: generate once, save the PEM.
+    let id = Identity::generate();
+    std::fs::write(&key_file, id.to_pkcs8_pem().unwrap()).unwrap();
+    let mut ann = Annotation::new(
+        Motivation::Assessing,
+        Target::Iri(TARGET.into()),
+        vec![Body::star(4.0)],
+    )
+    .with_created("2026-06-21T10:00:00Z")
+    .with_creator(Creator::new(id.issuer_id().unwrap()));
+    id.sign_annotation(&mut ann).unwrap();
+
+    let point = PublicationPoint::from_server(&base);
+    let dest = Dest::Endpoint {
+        point: point.clone(),
+        bearer: None,
+    };
+    let stored = client.write(&ann, &dest).await.unwrap();
+
+    // The `--id` flag accepts the full annotation URL `write` printed.
+    let full_url = stored.id.clone().unwrap();
+    let dedup = freedback_cli_client::dedup_id_from_url(&full_url).to_string();
+    assert_eq!(dedup, freedback_protocol::dedup_id(&ann).unwrap());
+
+    // read shows it.
+    let source = Source::Endpoint(CollectionPoint::from_server(&base));
+    assert_eq!(client.read(TARGET, &source).await.unwrap().len(), 1);
+
+    // delete with a FRESH key → 403 and the annotation survives.
+    let stranger = Identity::generate();
+    let mut bad = freedback_protocol::DeleteRequest::new(&dedup, "2026-07-05T12:00:00Z");
+    stranger.sign_delete(&mut bad).unwrap();
+    let err = client.delete(&point, &bad, None).await.unwrap_err();
+    assert!(
+        err.to_string().contains("403"),
+        "a different key must be refused: {err}"
+    );
+    assert_eq!(client.read(TARGET, &source).await.unwrap().len(), 1);
+
+    // delete with the SAME key-file identity → gone.
+    let reloaded = Identity::from_pkcs8_pem(&std::fs::read_to_string(&key_file).unwrap()).unwrap();
+    let mut doc = freedback_protocol::DeleteRequest::new(&dedup, "2026-07-05T12:00:00Z");
+    reloaded.sign_delete(&mut doc).unwrap();
+    client.delete(&point, &doc, None).await.unwrap();
+
+    // read no longer shows it.
+    assert!(client.read(TARGET, &source).await.unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn read_from_file_fixture_same_code_path() {
     // Persist an array of annotations to a file, then read via Source::File.
