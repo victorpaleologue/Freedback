@@ -1,0 +1,87 @@
+name: Deploy (Fly.io)
+
+# Continuous deployment of the demo servers to Fly.io (docs/hosting.md):
+#   * feedback (demo) server  -> app in deploy/fly/feedback.toml
+#   * discovery server        -> app in deploy/fly/discovery.toml
+#
+# GUARDED: the whole job runs only when a `FLY_API_TOKEN` repo secret is
+# present (same pattern as release.yml's publish-npm-widgets: `secrets` IS
+# readable in a job-level `if`, so an absent token skips the job cleanly and a
+# push never fails for want of a token). To turn it on, create a Fly access
+# token and add it as the secret — see docs/hosting.md ("Automated
+# deployment"). The apps are created on first run (idempotent), so you don't
+# need flyctl locally.
+#
+# Each successful deploy is recorded as a GitHub Deployment (native Actions
+# `environment:` block below) — this is what makes the live URL show up under
+# the repo's "Environments" panel / deployments feed. `<app>.fly.dev` is used
+# as the environment URL because it always resolves immediately after deploy,
+# unlike an optional custom subdomain that may not have DNS/certs attached yet.
+on:
+  push:
+    branches: [main]
+    paths:
+      # The image bundles all three servers, so any change to the server code,
+      # the build, or the Fly config should redeploy the demo.
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Dockerfile"
+      - "deploy/fly/**"
+      - ".github/workflows/fly-deploy.yml"
+  workflow_dispatch:
+
+# One deploy at a time; let an in-flight deploy finish rather than cancel it.
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write # required for the `environment:` block to record a Deployment
+
+jobs:
+  deploy:
+    name: deploy ${{ matrix.config }}
+    runs-on: ubuntu-latest
+    # Gate the ENTIRE job (not just its steps) so no Deployment/Environment is
+    # even created when there's no token to actually deploy with.
+    if: ${{ secrets.FLY_API_TOKEN != '' }}
+    strategy:
+      # Independent apps — deploy both, don't abort one if the other fails.
+      fail-fast: false
+      matrix:
+        config: [feedback, discovery]
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      # Optional: set a repo variable FLY_ORG to deploy under a non-personal org.
+      FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
+    # Records a GitHub Deployment for this run. `name` must be resolvable
+    # up front (matrix/vars only — no step outputs), `url` is applied once the
+    # job finishes and can reference step outputs.
+    environment:
+      name: fly-${{ matrix.config }}
+      url: ${{ steps.app.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the Fly app name + URL
+        id: app
+        run: |
+          app="$(grep -m1 '^app *= *"' deploy/fly/${{ matrix.config }}.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "name=$app" >> "$GITHUB_OUTPUT"
+          echo "url=https://$app.fly.dev" >> "$GITHUB_OUTPUT"
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Create the app if it doesn't exist (idempotent)
+        run: |
+          echo "Ensuring Fly app '${{ steps.app.outputs.name }}' exists in org '$FLY_ORG'…"
+          flyctl apps create "${{ steps.app.outputs.name }}" --org "$FLY_ORG" || echo "app already exists (or create not permitted by this token) — continuing"
+
+      - name: Deploy
+        # Remote builders (no Docker in CI). The build context is the repo root
+        # so the workspace Dockerfile can see every crate; --config selects which
+        # app/process to deploy. The image + env/[processes] come from the toml.
+        run: flyctl deploy --remote-only --config deploy/fly/${{ matrix.config }}.toml
