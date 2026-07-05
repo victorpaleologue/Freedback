@@ -1,0 +1,69 @@
+name: Deploy (Fly.io)
+
+# Continuous deployment of the demo servers to Fly.io (docs/hosting.md):
+#   * feedback (demo) server  -> app in deploy/fly/feedback.toml
+#   * discovery server        -> app in deploy/fly/discovery.toml
+#
+# GUARDED: this runs only when a `FLY_API_TOKEN` repo secret is present. Until
+# you add one it is skipped cleanly (every step no-ops), so it never fails a
+# push. To turn it on, create a Fly access token and add it as the secret — see
+# docs/hosting.md ("Automated deployment"). The apps are created on first run
+# (idempotent), so you don't need flyctl locally.
+on:
+  push:
+    branches: [main]
+    paths:
+      # The image bundles all three servers, so any change to the server code,
+      # the build, or the Fly config should redeploy the demo.
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Dockerfile"
+      - "deploy/fly/**"
+      - ".github/workflows/fly-deploy.yml"
+  workflow_dispatch:
+
+# One deploy at a time; let an in-flight deploy finish rather than cancel it.
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy ${{ matrix.config }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Independent apps — deploy both, don't abort one if the other fails.
+      fail-fast: false
+      matrix:
+        config: [feedback, discovery]
+    env:
+      # Mapped from the secret so it can gate steps (the `secrets` context is not
+      # available in `if:`, but `env` is). Absent secret => empty => steps skip.
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      # Optional: set a repo variable FLY_ORG to deploy under a non-personal org.
+      FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No token — skip
+        if: env.FLY_API_TOKEN == ''
+        run: echo "FLY_API_TOKEN is not set — skipping Fly.io deploy (see docs/hosting.md)."
+
+      - name: Install flyctl
+        if: env.FLY_API_TOKEN != ''
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Create the app if it doesn't exist (idempotent)
+        if: env.FLY_API_TOKEN != ''
+        run: |
+          app="$(grep -m1 '^app *= *"' deploy/fly/${{ matrix.config }}.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "Ensuring Fly app '$app' exists in org '$FLY_ORG'…"
+          flyctl apps create "$app" --org "$FLY_ORG" || echo "app already exists (or create not permitted by this token) — continuing"
+
+      - name: Deploy
+        if: env.FLY_API_TOKEN != ''
+        # Remote builders (no Docker in CI). The build context is the repo root
+        # so the workspace Dockerfile can see every crate; --config selects which
+        # app/process to deploy. The image + env/[processes] come from the toml.
+        run: flyctl deploy --remote-only --config deploy/fly/${{ matrix.config }}.toml

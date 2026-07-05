@@ -42,6 +42,37 @@ curl https://freedback-demo.fly.dev/.well-known/freedback
 curl https://freedback-discovery.fly.dev/.well-known/freedback
 ```
 
+### Automated deployment (GitHub Actions CD)
+
+`.github/workflows/fly-deploy.yml` redeploys **both** apps to Fly on every push
+to `main` that touches the server code / build / Fly config (`crates/**`,
+`Cargo.*`, `Dockerfile`, `deploy/fly/**`), and on manual **Run workflow**. It
+builds on Fly's **remote builders** (no Docker in CI) and **creates the apps on
+first run** (idempotent), so you don't need `flyctl` locally at all — the CLI
+steps above are only for a one-off manual deploy or local testing.
+
+The job is **guarded**: it runs only when a `FLY_API_TOKEN` repo secret is
+present, and is skipped cleanly otherwise (it never fails a push). Turning it on
+is **all web UI** — nothing to install:
+
+1. **Fly.io — billing.** Add a payment method (Fly **Dashboard → your account →
+   Billing**). The configs scale to zero, so a demo costs ~nothing, but Fly
+   requires a card on file.
+2. **Fly.io — token.** Create an access token at **<https://fly.io/user/personal_access_tokens>**
+   ("Create access token") and copy it. (A personal/org access token can create
+   apps + deploy; a narrower per-app *deploy token* also works once the apps
+   exist.)
+3. **GitHub — secret.** In the repo, **Settings → Secrets and variables →
+   Actions → New repository secret**, name it **`FLY_API_TOKEN`**, paste the
+   token.
+   - *(Optional)* if you deploy under a non-personal Fly org, add a repo
+     **variable** `FLY_ORG` with the org slug (defaults to `personal`).
+
+Then push to `main` (or **Actions → Deploy (Fly.io) → Run workflow**) and it
+provisions + deploys both apps. The app **names** in the tomls (`freedback-demo`,
+`freedback-discovery`) are global on Fly — if either is taken, change the `app =`
+line in the toml (and `FREEDBACK_BASE_URL`) before the first run.
+
 ### Branded subdomains (optional)
 
 Point subdomains of `freedback.net` at the apps and set certs:
