@@ -159,6 +159,14 @@
       return false;
     }
   }
+  function isDeleteItem(url) {
+    try {
+      var p = new URL(url, location.href).pathname;
+      return p.indexOf(PUBLISH_PATH) === 0 && p.length > PUBLISH_PATH.length;
+    } catch (e) {
+      return false;
+    }
+  }
 
   function jsonResponse(status, body) {
     return new Response(JSON.stringify(body), {
@@ -197,6 +205,31 @@
     });
   }
 
+  // DELETE /annotations/<id> — the widgets' "delete my feedback" affordance
+  // (ADR 0021). The <id> is the basename of the stored annotation's `id` (this
+  // mock mints urns, whose basename is the whole urn). Fake-success like the
+  // rest of this mock: no signature/bearer verification — remove from the
+  // store → 204; unknown → 404.
+  function handleDelete(input) {
+    var u = new URL(input, location.href);
+    var suffix = decodeURIComponent(u.pathname.slice(PUBLISH_PATH.length));
+    if (!suffix) return jsonResponse(400, { error: "missing annotation id" });
+    var entries = Array.from(store.entries());
+    for (var i = 0; i < entries.length; i++) {
+      var target = entries[i][0];
+      var list = entries[i][1];
+      for (var j = 0; j < list.length; j++) {
+        var id = String(list[j].id || "");
+        if (id === suffix || id.split("/").filter(Boolean).pop() === suffix) {
+          list.splice(j, 1);
+          store.set(target, list);
+          return new Response(null, { status: 204 });
+        }
+      }
+    }
+    return jsonResponse(404, { error: "annotation not found" });
+  }
+
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   window.fetch = async function mockFetch(input, init) {
@@ -221,6 +254,7 @@
     var upper = (method || "GET").toUpperCase();
     if (upper === "POST" && isPublish(url)) return handlePublish(effectiveInit);
     if (upper === "GET" && isRead(url)) return handleRead(url);
+    if (upper === "DELETE" && isDeleteItem(url)) return handleDelete(url);
 
     if (realFetch) return realFetch(input, init);
     throw new Error("mock backend: no real fetch available for " + url);

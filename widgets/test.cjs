@@ -120,6 +120,9 @@ const {
   scalarBody,
   textBody,
   buildSignedAnnotation,
+  deleteDocument,
+  buildSignedDelete,
+  dedupFromId,
   generateKeyRecord,
   identityFromRecord,
   wrapIdentity,
@@ -177,6 +180,35 @@ assert.strictEqual(jcs({ b: 1, a: 2 }), '{"a":2,"b":1}');
 assert.strictEqual(jcs({ x: 4.0 }), '{"x":4}'); // 4.0 -> "4" like Rust
 assert.strictEqual(jcs({ x: 0.5 }), '{"x":0.5}');
 assert.strictEqual(jcs([3, 1, 2]), "[3,1,2]");
+
+// --- delete document: exact canonical bytes (right to erasure, ADR 0021) ---
+// This exact string mirrors the Rust reference test
+// `canonical_bytes_are_stable_and_exclude_signature` in
+// crates/protocol-lib/src/erasure.rs (same DEDUP/CREATED fixture, same JCS
+// form: keys sorted, signature excluded). If the two ever diverge, a delete
+// signed in the browser would stop verifying server-side.
+const DEL_DEDUP = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const DEL_CREATED = "2026-07-05T12:00:00Z";
+const EXPECTED_DELETE_CANONICAL =
+  `{"annotation":"${DEL_DEDUP}","created":"${DEL_CREATED}","type":"Delete"}`;
+assert.strictEqual(
+  jcs(deleteDocument(DEL_DEDUP, DEL_CREATED)),
+  EXPECTED_DELETE_CANONICAL,
+  "delete-doc JCS must byte-match the Rust canonical bytes (erasure.rs)"
+);
+// The document shape itself matches protocol-lib's DeleteRequest.
+assert.deepStrictEqual(deleteDocument(DEL_DEDUP, DEL_CREATED), {
+  type: "Delete",
+  annotation: DEL_DEDUP,
+  created: DEL_CREATED,
+});
+
+// dedupFromId: the dedup id is the basename of the server-minted item id.
+assert.strictEqual(dedupFromId(`http://127.0.0.1:8080/annotations/${DEL_DEDUP}`), DEL_DEDUP);
+assert.strictEqual(dedupFromId(`http://h/annotations/${DEL_DEDUP}?x=1#frag`), DEL_DEDUP);
+assert.strictEqual(dedupFromId("urn:freedback:mock:7"), "urn:freedback:mock:7");
+assert.strictEqual(dedupFromId(null), null);
+assert.strictEqual(dedupFromId(""), null);
 
 // Body builders match the canonical wire shape.
 assert.deepStrictEqual(Object.keys(starBody(4)).sort(), [
@@ -239,6 +271,38 @@ async function signingTest() {
   const ok = await sc.verify({ name: "ECDSA", hash: "SHA-256" }, kp.publicKey, sig, bytes);
   assert.ok(ok, "the detached ES256 signature must verify over the JCS bytes");
   assert.strictEqual(sig.length, 64, "raw R||S signature is 64 bytes");
+
+  // --- signed delete document (right to erasure, ADR 0021) -----------------
+  // buildSignedDelete must use the IDENTICAL encoding to annotation signing:
+  // kid = SPKI PEM, sig = base64url (no pad) over the JCS bytes of the doc
+  // WITHOUT its `signature` field — exactly what the Rust server verifies.
+  const DEDUP = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const del = await buildSignedDelete(DEDUP, ident, "2026-07-05T12:00:00Z");
+  assert.strictEqual(del.type, "Delete");
+  assert.strictEqual(del.annotation, DEDUP);
+  assert.strictEqual(del.created, "2026-07-05T12:00:00Z");
+  assert.strictEqual(del.signature.alg, "ES256");
+  assert.strictEqual(del.signature.kid, pem, "delete kid is the same SPKI PEM as annotations");
+  assert.ok(!/[+/=]/.test(del.signature.sig), "sig is base64url with no padding");
+
+  // Recompute the signed bytes (doc minus signature) and verify — and pin that
+  // those bytes are exactly the Rust canonical form.
+  const { signature: delSig, ...delContent } = del;
+  const delCanonical = jcs(delContent);
+  assert.strictEqual(
+    delCanonical,
+    `{"annotation":"${DEDUP}","created":"2026-07-05T12:00:00Z","type":"Delete"}`,
+    "the signed delete bytes are the Rust canonical bytes (signature excluded)"
+  );
+  const delBytes = new TextEncoder().encode(delCanonical);
+  const delRaw = Uint8Array.from(
+    Buffer.from(delSig.sig.replace(/-/g, "+").replace(/_/g, "/"), "base64")
+  );
+  assert.ok(
+    await sc.verify({ name: "ECDSA", hash: "SHA-256" }, kp.publicKey, delRaw, delBytes),
+    "the delete's detached ES256 signature must verify over the JCS bytes"
+  );
+  assert.strictEqual(delRaw.length, 64, "raw R||S delete signature is 64 bytes");
 }
 
 // --- identity export / import / rotation (issue #27) ----------------------
@@ -390,12 +454,62 @@ async function eventsTest() {
   assert.ok(errored && errored.error, "freedback:error fired on a failed publish");
   assert.match(String(errored.error.message), /publish failed: 401/, "detail carries the error");
   assert.ok(!publishedOnErr, "no published event on failure");
+
+  // 3) Erasure success: a 204 DELETE must fire freedback:deleted with the
+  // dedup id + response (right to erasure, ADR 0021). data-token selects the
+  // bearer-authorized delete path (the signed path needs IndexedDB, which the
+  // Node sandbox doesn't have; buildSignedDelete is covered in signingTest).
+  const DEDUP = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const deletes = [];
+  widgets.state.__fetch = (url, opts) => {
+    deletes.push({ url, method: opts.method, headers: opts.headers, body: JSON.parse(opts.body) });
+    return Promise.resolve({ ok: false, status: 204, text: () => Promise.resolve("") });
+  };
+  const delEl = new Stars();
+  delEl.setAttribute("data-target", "https://example.com/item/ev");
+  delEl.setAttribute("data-publish", "https://feedback.example/annotations/");
+  delEl.setAttribute("data-token", "test-bearer");
+  let deleted = null;
+  let erroredOnDel = false;
+  delEl.addEventListener("freedback:deleted", (e) => (deleted = e.detail));
+  delEl.addEventListener("freedback:error", () => (erroredOnDel = true));
+
+  await delEl.erase(DEDUP);
+  assert.ok(deleted, "freedback:deleted fired on a 204 delete");
+  assert.strictEqual(deleted.annotation, DEDUP, "detail carries the erased dedup id");
+  assert.strictEqual(deleted.response.status, 204, "detail carries the DELETE response");
+  assert.ok(!erroredOnDel, "no error event on a successful delete");
+  assert.strictEqual(deletes.length, 1, "exactly one DELETE request");
+  assert.strictEqual(deletes[0].method, "DELETE");
+  assert.strictEqual(deletes[0].url, `https://feedback.example/annotations/${DEDUP}`);
+  assert.strictEqual(deletes[0].headers.authorization, "Bearer test-bearer");
+  assert.strictEqual(deletes[0].body.type, "Delete", "body is the delete document");
+  assert.strictEqual(deletes[0].body.annotation, DEDUP);
+  assert.ok(deletes[0].body.created, "the delete document carries created");
+  assert.strictEqual(deletes[0].body.signature, undefined, "bearer path sends an unsigned doc");
+
+  // 4) Erasure failure: a 403 must fire freedback:error (no deleted event).
+  widgets.state.__fetch = () =>
+    Promise.resolve({ ok: false, status: 403, text: () => Promise.resolve("not the creator") });
+  const delBad = new Stars();
+  delBad.setAttribute("data-target", "https://example.com/item/ev");
+  delBad.setAttribute("data-publish", "https://feedback.example/annotations/");
+  delBad.setAttribute("data-token", "test-bearer");
+  let delErrored = null;
+  let deletedOnErr = false;
+  delBad.addEventListener("freedback:error", (e) => (delErrored = e.detail));
+  delBad.addEventListener("freedback:deleted", () => (deletedOnErr = true));
+
+  await delBad.erase(DEDUP);
+  assert.ok(delErrored && delErrored.error, "freedback:error fired on a failed delete");
+  assert.match(String(delErrored.error.message), /delete failed: 403/, "detail carries the error");
+  assert.ok(!deletedOnErr, "no deleted event on failure");
 }
 
 signingTest()
   .then(identityTest)
   .then(eventsTest)
-  .then(() => console.log("widgets: all helper + JCS + signing + identity + event tests passed"))
+  .then(() => console.log("widgets: all helper + JCS + signing + erasure + identity + event tests passed"))
   .catch((e) => {
     console.error(e);
     process.exit(1);

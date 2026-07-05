@@ -16,7 +16,8 @@ this bulletproof — see [A reusable wrapper](#a-reusable-wrapper-optional).)
 > **[`@freedback/widgets`](https://www.npmjs.com/package/@freedback/widgets)** with
 > an **ESM build** (side-effect import registers the elements), **bundled
 > TypeScript types** (zero-config JSX), and **outcome events**
-> (`freedback:published` / `freedback:error`). The dependency-free `<script src>`
+> (`freedback:published` / `freedback:deleted` / `freedback:error`). The
+> dependency-free `<script src>`
 > path keeps working unchanged. The "dead-simple"
 > `npm add @freedback/widgets` → `import "@freedback/widgets"` → `<freedback-stars/>`
 > flow now works. A separate `@freedback/react` wrapper (camelCase props + typed
@@ -57,7 +58,7 @@ this bulletproof — see [A reusable wrapper](#a-reusable-wrapper-optional).)
 That's it. The widget renders the current aggregate from `data-read`, and
 (because `data-sign` is present) lets the visitor publish a self-signed rating to
 `data-publish`. To react to the outcome in your app, listen for the
-[outcome events](#outcome-events-freedbackpublished--freedbackerror).
+[outcome events](#outcome-events-freedbackpublished--freedbackdeleted--freedbackerror).
 
 > **No build step?** You can still load the canonical script directly — it
 > registers the same five elements as a global side effect:
@@ -108,8 +109,9 @@ import { jcs, starBody, exportIdentity, rotateIdentity } from "@freedback/widget
 ≤ 18), **and** the framework-neutral `HTMLElementTagNameMap`, so all five tags
 type-check with **zero consumer setup** — no hand-written shim. (Older releases
 told you to add an `src/freedback.d.ts`; that is no longer needed — delete it if
-you have one.) The tags also type the `onPublished` / `onError` props for the
-[outcome events](#outcome-events-freedbackpublished--freedbackerror), and
+you have one.) The tags also type the `onPublished` / `onDeleted` / `onError`
+props for the
+[outcome events](#outcome-events-freedbackpublished--freedbackdeleted--freedbackerror), and
 `document.querySelector("freedback-stars")` is typed as the element.
 
 ### 3. Insert the widget in your `.tsx`
@@ -196,31 +198,39 @@ demo at `https://freedback.net`).
 - **Reading the result.** Besides updating its own DOM (the aggregate / status
   line), each widget now **dispatches `freedback:published` / `freedback:error`
   events** so your app can react — see
-  [Outcome events](#outcome-events-freedbackpublished--freedbackerror).
+  [Outcome events](#outcome-events-freedbackpublished--freedbackdeleted--freedbackerror).
 - **One key per browser.** `data-sign` mints/reuses one identity per browser
   (IndexedDB). The `window.Freedback` global exposes
   `exportIdentity` / `importIdentity` / `rotateIdentity` for backup/rotation
   (issue #27).
+- **Delete my feedback (right to erasure).** With `data-sign`, the widgets
+  recognise the visitor's **own** annotations in fetched lists and render a
+  small `×` control (`.fb-del`): per comment on `<freedback-comment>`, per
+  own-tag chip on `<freedback-tag>`, and as a post-publish **undo** next to the
+  aggregate on the rating widgets. It signs a delete document with the same
+  stored key and `DELETE`s the annotation on the server (ADR 0021); observe the
+  outcome via `freedback:deleted` / `freedback:error`.
 - **No server yet?** Point `data-read`/`data-publish` at a mock during
   development, or see the live showcase on the site, which fakes the server in
   the browser so the widgets behave realistically.
 
 ---
 
-## Outcome events (`freedback:published` / `freedback:error`)
+## Outcome events (`freedback:published` / `freedback:deleted` / `freedback:error`)
 
-After a publish, the widget **dispatches a `CustomEvent` on its host element** —
-additive to the existing DOM behavior (the aggregate refresh / `.fb-status`
-text), so nothing you relied on changes:
+After a publish or delete, the widget **dispatches a `CustomEvent` on its host
+element** — additive to the existing DOM behavior (the aggregate refresh /
+`.fb-status` text), so nothing you relied on changes:
 
 | Event | When | `event.detail` |
 |---|---|---|
 | `freedback:published` | the POST succeeded | `{ response, annotation }` — the parsed server response and the annotation that was sent |
-| `freedback:error` | the POST failed | `{ error }` — the `Error` thrown |
+| `freedback:deleted` | a delete succeeded (right to erasure, ADR 0021) | `{ annotation, response }` — the erased annotation's dedup id and the raw `DELETE` response (204) |
+| `freedback:error` | the POST or DELETE failed | `{ error }` — the `Error` thrown |
 
 The events **bubble** and are **composed**, so you can also listen on a container.
-The bundled types add typed `onPublished` / `onError` props and a typed
-`addEventListener`.
+The bundled types add typed `onPublished` / `onDeleted` / `onError` props and a
+typed `addEventListener`.
 
 In React, attach the listeners via a ref in `useEffect` (custom events aren't
 React's synthetic `on*` props, so a ref is the reliable way):
@@ -287,7 +297,7 @@ in the `@freedback/widgets` 1.0 package:
    (React ≤ 18), and `HTMLElementTagNameMap` — zero consumer setup. ✅
 4. **Outcome events.** `freedback:published` / `freedback:error` are dispatched
    on each widget (see
-   [Outcome events](#outcome-events-freedbackpublished--freedbackerror)). ✅
+   [Outcome events](#outcome-events-freedbackpublished--freedbackdeleted--freedbackerror)). ✅
 
 ### Still future work
 

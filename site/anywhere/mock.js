@@ -184,6 +184,29 @@
     });
   }
 
+  // DELETE /annotations/<id> — the widgets' "delete my feedback" affordance
+  // (ADR 0021). The <id> is the basename of the stored annotation's `id` (this
+  // mock mints urns, whose basename is the whole urn). Fake-success like the
+  // rest of this mock: no signature/bearer verification — remove from the
+  // store → 204; unknown → 404.
+  function handleDelete(url) {
+    const u = new URL(url, location.href);
+    const suffix = decodeURIComponent(u.pathname.slice(PUBLISH_PATH.length));
+    if (!suffix) return jsonResponse(400, { error: "missing annotation id" });
+    for (const [target, list] of store) {
+      const idx = list.findIndex((a) => {
+        const id = String(a.id || "");
+        return id === suffix || id.split("/").filter(Boolean).pop() === suffix;
+      });
+      if (idx !== -1) {
+        list.splice(idx, 1);
+        store.set(target, list);
+        return new Response(null, { status: 204 });
+      }
+    }
+    return jsonResponse(404, { error: "annotation not found" });
+  }
+
   const realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   window.fetch = async function mockFetch(input, init) {
@@ -211,6 +234,9 @@
     const path = pathOf(url);
     if (upper === "POST" && path === PUBLISH_PATH) return handlePublish(effectiveInit);
     if (upper === "GET" && path === READ_PATH) return handleRead(url);
+    if (upper === "DELETE" && path && path.startsWith(PUBLISH_PATH) && path.length > PUBLISH_PATH.length) {
+      return handleDelete(url);
+    }
 
     // Not a mock endpoint — defer to the real fetch.
     if (realFetch) return realFetch(input, init);

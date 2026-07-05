@@ -59,14 +59,28 @@ elements globally with no bundler:
 
 ## Outcome events
 
-After a publish, each widget dispatches a `CustomEvent` on its host element:
+After a publish or delete, each widget dispatches a `CustomEvent` on its host
+element:
 
 - `freedback:published` — `detail = { response, annotation }` on success
-- `freedback:error` — `detail = { error }` on failure
+- `freedback:deleted` — `detail = { annotation, response }` after a successful
+  erasure (`annotation` is the erased dedup id)
+- `freedback:error` — `detail = { error }` on a failed publish or delete
 
 ```ts
 el.addEventListener("freedback:published", (e) => console.log(e.detail.response));
 ```
+
+## Delete my feedback (right to erasure)
+
+With `data-sign`, the widgets recognise the visitor's **own** annotations in
+fetched lists (their `creator.id` matches the browser identity) and render a
+small `×` control (`.fb-del`, `aria-label="Delete my feedback"`): per item on
+`<freedback-comment>`, per own-tag chip on `<freedback-tag>`, and as a
+post-publish **undo** next to the aggregate on the rating widgets. Clicking it
+signs a delete document with the same stored P-256 key that signed the
+annotation and `DELETE`s it on the feedback server (ADR 0021) — the server
+erases the record and keeps only a content-free tombstone.
 
 See [docs/widgets-react.md](https://github.com/freedback/freedback/blob/main/docs/widgets-react.md)
 for the full React guide (including a `useEffect`+ref event example).

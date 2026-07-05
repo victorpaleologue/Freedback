@@ -78,15 +78,45 @@ test("e2e harness: self-signed publish + read back for all widget kinds", async 
   await page.locator("#scalar .fb-send").click();
   await expect(page.locator("#scalar .fb-agg")).toContainText("avg 7", { timeout: 15000 });
 
-  // comment
+  // comment (the li also carries the own-item `×` delete control, so match on
+  // containment rather than exact text)
   await page.locator("#comment .fb-in").fill("great work");
   await page.locator("#comment form button").click();
-  await expect(page.locator("#comment .fb-list li")).toHaveText(["great work"], { timeout: 15000 });
+  await expect(page.locator("#comment .fb-list li")).toHaveCount(1, { timeout: 15000 });
+  await expect(page.locator("#comment .fb-list li")).toContainText("great work", { timeout: 15000 });
 
-  // tag
+  // tag (own chip also carries the `×` delete control)
   await page.locator("#tag .fb-in").fill("rust");
   await page.locator("#tag form button").click();
-  await expect(page.locator("#tag .fb-chip")).toHaveText(["rust"], { timeout: 15000 });
+  await expect(page.locator("#tag .fb-chip")).toHaveCount(1, { timeout: 15000 });
+  await expect(page.locator("#tag .fb-chip")).toContainText("rust", { timeout: 15000 });
+
+  // delete my feedback (right to erasure, ADR 0021): the just-published
+  // comment is OWN (its creator.id matches this browser identity), so it
+  // renders an `.fb-del` control. Clicking it signs a delete document with the
+  // same WebCrypto key and DELETEs the annotation on the REAL feedback server;
+  // on 204 the widget fires `freedback:deleted` and refreshes the list.
+  const ownDel = page.locator("#comment .fb-list li .fb-del");
+  await expect(ownDel).toBeVisible({ timeout: 15000 });
+  await expect(ownDel).toHaveAttribute("aria-label", "Delete my feedback");
+  // Observe the bubbling+composed freedback:deleted event at the document.
+  await page.evaluate(() => {
+    window.__fbDeleted = [];
+    document.addEventListener("freedback:deleted", (e) =>
+      window.__fbDeleted.push({ annotation: e.detail.annotation, status: e.detail.response && e.detail.response.status })
+    );
+  });
+  await ownDel.click();
+  await page.waitForFunction(() => window.__fbDeleted && window.__fbDeleted.length === 1, null, {
+    timeout: 15000,
+  });
+  const deleted = await page.evaluate(() => window.__fbDeleted[0]);
+  expect(deleted.status).toBe(204); // the server really erased it
+  expect(deleted.annotation).toMatch(/^[0-9a-f]{64}$/); // the dedup id (content address)
+  // After the post-delete refresh the comment is gone from the read-back list.
+  await expect(page.locator("#comment .fb-list li")).toHaveCount(0, { timeout: 15000 });
+  // And no error surfaced in the widget status line.
+  await expect(page.locator("#comment .fb-status")).toHaveText("");
 });
 
 // 3) OAuth bearer (data-token) path: publish + read back the aggregate.
