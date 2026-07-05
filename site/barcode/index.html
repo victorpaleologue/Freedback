@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback — rate a product by barcode</title>
+  <meta name="description" content="The original 2014 Freedback use case, live: consumers give feedback on products via their barcodes, against a real Freedback server." />
+  <!-- The canonical shipped widgets first, then this page's logic. No mock
+       here: barcode.js points the widgets at a real, live Freedback server. -->
+  <script src="/widgets/freedback-widgets.js"></script>
+  <script src="/barcode/barcode.js" defer></script>
+  <link rel="stylesheet" href="/freedback.css" />
+  <script src="/theme.js"></script>
+</head>
+<body>
+  <button class="fb-theme-toggle" data-fb-theme-toggle aria-label="Toggle light / dark theme"><span data-fb-theme-icon>🌙</span></button>
+  <main>
+  <h1>Rate a product by barcode</h1>
+  <p class="sub">The very first use case from the original 2014 white book:
+  consumers giving feedback on the products they buy — no store account, no
+  manufacturer's permission. Every product barcode is a URI, and everything
+  with a URI deserves feedback.</p>
+
+  <div class="banner">
+    <strong>This is not a mock.</strong> This page publishes to a live Freedback
+    demo server with ephemeral storage — it wakes from idle in a few seconds and
+    may reset. Your feedback is signed by a key generated in <em>your</em>
+    browser, and you can delete it (the ×): the right to erasure, implemented.
+  </div>
+
+  <div class="card">
+    <h3>Enter or scan a barcode</h3>
+    <p class="blurb">Type the digits printed under any product barcode (EAN-13,
+    UPC-A, EAN-8 or GTIN-14). The check digit is verified before anything is
+    looked up.</p>
+    <form id="gtin-form">
+      <label for="gtin-input">Barcode digits (GTIN)</label><br />
+      <input id="gtin-input" name="gtin" type="text" inputmode="numeric"
+        autocomplete="off" placeholder="e.g. 3017620422003" size="20" />
+      <button type="submit" class="fb-btn">Show feedback</button>
+      <button type="button" class="fb-btn secondary" id="scan-btn" hidden>Scan with camera</button>
+    </form>
+    <p id="scan-note" class="blurb" hidden>Camera scanning needs Chrome/Android
+    (the <code>BarcodeDetector</code> API) — typing the digits works everywhere.</p>
+    <p id="gtin-error" role="alert" hidden></p>
+    <div id="scanner" hidden></div>
+    <p class="blurb">No product handy? Try one of these:</p>
+    <p id="examples">
+      <button type="button" class="fb-btn secondary" data-gtin="3017620422003">3017620422003 — a famous hazelnut spread</button>
+      <button type="button" class="fb-btn secondary" data-gtin="5449000000996">5449000000996 — a well-known cola</button>
+      <button type="button" class="fb-btn secondary" data-gtin="4006381333931">4006381333931 — a classic highlighter pen</button>
+    </p>
+  </div>
+
+  <div class="card" id="product-card" hidden>
+    <h3>Feedback on this product</h3>
+    <p class="uri"><code id="target-uri"></code></p>
+    <p class="blurb">That URI is a <a href="https://www.gs1.org/standards/gs1-digital-link">GS1
+    Digital Link</a> — the product's standard identity on the web — so everyone
+    scanning the same product converges on the same feedback.</p>
+    <div class="widgets" id="product-widgets"></div>
+  </div>
+
+  <h2>How this works</h2>
+  <p>The digits are validated with the standard GS1 mod-10 check digit,
+  normalized to a 14-digit GTIN, and turned into
+  <code>https://id.gs1.org/01/&lt;gtin14&gt;</code>. Three shipped widgets are
+  then bound to that URI — stars on the product itself, comments and tags on
+  <code>#comments</code> / <code>#tags</code> fragments so the counts never
+  mix — reading from and publishing to the live server's
+  <code>/annotations/</code> endpoint with your self-signed P-256 identity.</p>
+
+  <p class="nav">
+    <a href="/">← Home</a> &nbsp;·&nbsp;
+    <a href="/demo/">Main widget showcase →</a>
+  </p>
+
+  <footer>
+    <p>Source &amp; docs: <a href="https://github.com/victorpaleologue/Freedback">github.com/victorpaleologue/Freedback</a></p>
+  </footer>
+  </main>
+</body>
+</html>

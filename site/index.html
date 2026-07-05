@@ -7,6 +7,9 @@
   <meta name="description" content="A federated, open protocol for typed feedback on anything with a URI — carried as W3C Web Annotations." />
   <link rel="stylesheet" href="/freedback.css" />
   <script src="/theme.js"></script>
+  <!-- Shipped widgets, live against the demo server: the "Feedback on
+       Freedback" section below dogfoods the protocol on this very page. -->
+  <script src="/widgets/freedback-widgets.js"></script>
 </head>
 <body>
   <button class="fb-theme-toggle" data-fb-theme-toggle aria-label="Toggle light / dark theme"><span data-fb-theme-icon>🌙</span></button>
@@ -29,6 +32,7 @@
         Wikipedia article, an arbitrary web page (targets are just URIs).</li>
       <li><a href="/collect/">Collect feedback (data collection)</a> — a portable talk-feedback form you can export to CSV / JSON-LD.</li>
       <li><a href="/questionnaire/">Questionnaire</a> — a multi-section survey built from drop-in widgets, with a live results summary.</li>
+      <li><a href="/barcode/">Barcode</a> — rate a real product by scanning its barcode (live server).</li>
     </ul>
 
     <h2>What it is</h2>
@@ -42,6 +46,35 @@
     edit it. Only you can delete it — and deletion really erases. Queries follow
     subjects, not people: we aggregate opinions about things, we don't build
     profiles of users.</p>
+
+    <h2>Feedback on Freedback</h2>
+    <p>We dogfood: the software we ship to collect feedback collects feedback
+    about the project itself — right here, for real.</p>
+    <div class="card">
+      <div class="widgets">
+        <div>
+          <span>Rate Freedback:</span>
+          <freedback-stars
+            data-target="https://freedback.net/"
+            data-read="https://freedback-demo.fly.dev/annotations/"
+            data-publish="https://freedback-demo.fly.dev/annotations/"
+            data-sign
+            data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-stars>
+        </div>
+        <freedback-comment
+          data-target="https://freedback.net/#feedback"
+          data-read="https://freedback-demo.fly.dev/annotations/"
+          data-publish="https://freedback-demo.fly.dev/annotations/"
+          data-sign
+          data-license="https://creativecommons.org/licenses/by/4.0/"></freedback-comment>
+      </div>
+    </div>
+    <div class="banner">
+      <strong>Live demo server.</strong> These widgets talk to a real Freedback
+      server with ephemeral storage — it wakes from idle in a few seconds and
+      may reset. Your feedback is signed by a key generated in <em>your</em>
+      browser, and you can delete it (the ×): the right to erasure, implemented.
+    </div>
 
     <h2>Protocol artifacts (stable URLs)</h2>
     <ul>
