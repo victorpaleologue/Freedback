@@ -452,6 +452,128 @@ async fn well_known_advertises_capabilities() {
     assert_eq!(doc["conformsTo"], "https://freedback.net/profile/1");
 }
 
+// --- data licensing (ADR 0022) ------------------------------------------------
+
+const LICENSE: &str = "https://creativecommons.org/licenses/by/4.0/";
+
+/// A signed star rating carrying an explicit `rights` license IRI.
+fn signed_licensed_star(value: f64, license: &str) -> (Identity, Value) {
+    let id = Identity::generate();
+    let mut ann = Annotation::new(
+        Motivation::Assessing,
+        Target::Iri("https://example.com/item/1".into()),
+        vec![FbBody::star(value)],
+    )
+    .with_created("2026-06-21T10:00:00Z")
+    .with_rights(license);
+    id.sign_annotation(&mut ann).unwrap();
+    (id, serde_json::to_value(ann).unwrap())
+}
+
+#[tokio::test]
+async fn rights_survives_post_and_read_back() {
+    let app = app();
+    let (_id, ann) = signed_licensed_star(4.0, LICENSE);
+
+    let (status, _h, body) = send(&app, "POST", "/annotations/", None, Some(ann)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["rights"], LICENSE, "POST echoes the license");
+    let dedup = body["id"]
+        .as_str()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .to_string();
+
+    // Single read returns it with `rights` intact.
+    let (status, _h, one) = send(&app, "GET", &format!("/annotations/{dedup}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(one["rights"], LICENSE);
+
+    // Collection read too.
+    let (status, _h, page) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["items"][0]["rights"], LICENSE);
+}
+
+#[tokio::test]
+async fn rights_survives_an_aliased_jsonld_serialization() {
+    // The same annotation with `rights` spelled as the prefixed JSON-LD term
+    // `dcterms:rights` must normalize (alias ingest, ADR 0007) to the same
+    // model — so the self-signature still verifies and reads return `rights`.
+    let app = app();
+    let (_id, mut ann) = signed_licensed_star(5.0, LICENSE);
+    let obj = ann.as_object_mut().unwrap();
+    let rights = obj.remove("rights").unwrap();
+    obj.insert("dcterms:rights".into(), rights);
+
+    let (status, _h, body) = send(&app, "POST", "/annotations/", None, Some(ann)).await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "aliased rights ingests: {body}"
+    );
+    let dedup = body["id"]
+        .as_str()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .to_string();
+
+    let (status, _h, one) = send(&app, "GET", &format!("/annotations/{dedup}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(one["rights"], LICENSE, "read back in canonical form");
+}
+
+#[tokio::test]
+async fn non_iri_rights_is_rejected_by_shacl() {
+    let app = app();
+    let (_id, ann) = signed_licensed_star(4.0, "not an iri");
+
+    let (status, _h, body) = send(&app, "POST", "/annotations/", None, Some(ann)).await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "SHACL must reject a non-IRI rights: {body}"
+    );
+    assert_eq!(body["report"]["conforms"], false);
+    let violations = body["report"]["violations"].as_array().unwrap();
+    assert!(
+        violations
+            .iter()
+            .any(|v| v.as_str().unwrap_or_default().contains("license IRI")),
+        "violation names the rights constraint: {violations:?}"
+    );
+}
+
+#[tokio::test]
+async fn well_known_advertises_the_default_license_when_configured() {
+    // Configured → `"license"` is surfaced (annotations without `rights` are
+    // distributed under it, ADR 0022).
+    let store = Arc::new(MemoryStore::new());
+    let licensed = build_app(AppState::new(store, BASE).with_default_license(LICENSE));
+    let (status, _h, doc) = send(&licensed, "GET", "/.well-known/freedback", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(doc["license"], LICENSE);
+
+    // Unconfigured → the key is absent entirely (not null / empty).
+    let (status, _h, doc) = send(&app(), "GET", "/.well-known/freedback", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        doc.get("license").is_none(),
+        "no default license advertised"
+    );
+}
+
 // --- right to erasure (ADR 0021) --------------------------------------------
 
 /// Build a signed delete document for `dedup` with `id`'s key.

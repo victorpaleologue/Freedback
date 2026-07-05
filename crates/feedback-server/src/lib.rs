@@ -46,6 +46,15 @@ pub struct AppState {
     /// must match this published key). `None` keeps the legacy behavior where
     /// announce is authenticated by the well-known fetch alone.
     pub server_key_pem: Option<String>,
+    /// Optional default data license (an IRI, e.g.
+    /// `https://creativecommons.org/licenses/by/4.0/`). When set it is
+    /// published in `/.well-known/freedback` as `"license"`, declaring that
+    /// annotations WITHOUT an explicit `rights` are distributed under this
+    /// license (data licensing, ADR 0022). An annotation's own `rights` IRI
+    /// always takes precedence. Purely declarative: the server never stamps it
+    /// into stored annotations (which would change their content address) and
+    /// enforces nothing beyond the SHACL `rights`-is-an-IRI check.
+    pub default_license: Option<String>,
     /// When set, wrap the router in a permissive CORS layer so browser widgets
     /// served from a different origin can read and publish (the real
     /// cross-origin widget scenario). Off by default to keep server behavior
@@ -65,6 +74,7 @@ impl AppState {
             page_size: 50,
             cache_max_age: 30,
             server_key_pem: None,
+            default_license: None,
             cors_permissive: false,
         }
     }
@@ -79,6 +89,14 @@ impl AppState {
     /// enabling signed-announce corroboration at a discovery registry.
     pub fn with_server_key_pem(mut self, pem: impl Into<String>) -> Self {
         self.server_key_pem = Some(pem.into());
+        self
+    }
+
+    /// Declare the server's default data license (an IRI) — advertised in
+    /// `/.well-known/freedback` as `"license"`; annotations without their own
+    /// `rights` are distributed under it (ADR 0022).
+    pub fn with_default_license(mut self, license_iri: impl Into<String>) -> Self {
+        self.default_license = Some(license_iri.into());
         self
     }
 

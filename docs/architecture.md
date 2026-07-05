@@ -65,7 +65,7 @@ annotation tooling can read it.
 ## Data lifecycle
 
 ```
-write:  build Annotation → (optional) P-256 sign → POST /annotations/
+write:  build Annotation (± rights license IRI, ADR 0022) → (optional) P-256 sign → POST /annotations/
         → auth (verify JWS  OR  OAuth bearer→(app,user))
         → JSON-LD expand → SHACL validate (reject→422+report)
         → FeedbackStore::put (dedup by content id)

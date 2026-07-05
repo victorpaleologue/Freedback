@@ -11,6 +11,10 @@
 //!   directly and the JSON-Lines snapshot loop is skipped.)
 //! - `FREEDBACK_OAUTH_TOKEN` + `FREEDBACK_OAUTH_APP` + `FREEDBACK_OAUTH_USER`
 //!   (optional single demo bearer token → app-scoped identity)
+//! - `FREEDBACK_DEFAULT_LICENSE` (optional license IRI, e.g.
+//!   `https://creativecommons.org/licenses/by/4.0/`: advertised in
+//!   `/.well-known/freedback` as `"license"` — annotations without an explicit
+//!   `rights` are distributed under it; ADR 0022)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -62,6 +66,15 @@ async fn main() -> anyhow::Result<()> {
     if let Ok(secs) = std::env::var("FREEDBACK_CACHE_MAX_AGE") {
         if let Ok(secs) = secs.parse::<u64>() {
             state = state.with_cache_max_age(secs);
+        }
+    }
+
+    // Optional default data license (an IRI), advertised in the well-known so
+    // consumers know the terms annotations without `rights` are served under
+    // (data licensing, ADR 0022).
+    if let Ok(license) = std::env::var("FREEDBACK_DEFAULT_LICENSE") {
+        if !license.trim().is_empty() {
+            state = state.with_default_license(license.trim().to_string());
         }
     }
 

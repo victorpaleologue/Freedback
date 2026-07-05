@@ -138,6 +138,12 @@ assert.strictEqual(star.conformsTo, "https://freedback.net/profile/1");
 assert.ok(Array.isArray(star.body) && star.body.length === 1);
 assert.ok(Array.isArray(star["@context"]));
 
+// data licensing (ADR 0022): an optional license IRI lands on `rights`.
+const LICENSE = "https://creativecommons.org/licenses/by/4.0/";
+const licensed = baseAnnotation("assessing", "https://ex/1", starBody(4), LICENSE);
+assert.strictEqual(licensed.rights, LICENSE, "baseAnnotation carries the license as rights");
+assert.strictEqual(star.rights, undefined, "no license -> no rights key at all");
+
 // ratingValue pulls the numeric value out of a rating body.
 assert.strictEqual(ratingValue(star), 4);
 assert.strictEqual(ratingValue({ body: [textBody("hi", "commenting")] }), null);
@@ -174,6 +180,28 @@ const content = canonicalContent(
   "2026-06-21T10:00:00Z"
 );
 assert.strictEqual(jcs(content), EXPECTED_CANONICAL, "JCS must byte-match the Rust canonicalizer");
+
+// With a license, `rights` joins the canonical (signed) bytes in JCS key order —
+// this exact string is pinned against the Rust canonicalizer in
+// crates/protocol-lib/src/canonical.rs (licensed_widget_content_canonical_bytes),
+// so a license set in the browser signs/verifies identically server-side.
+const EXPECTED_CANONICAL_LICENSED = EXPECTED_CANONICAL.replace(
+  '"motivation":"assessing",',
+  `"motivation":"assessing","rights":"${LICENSE}",`
+);
+const licensedContent = canonicalContent(
+  "assessing",
+  "https://example.com/item/1",
+  starBody(4),
+  "urn:freedback:key:abc",
+  "2026-06-21T10:00:00Z",
+  LICENSE
+);
+assert.strictEqual(
+  jcs(licensedContent),
+  EXPECTED_CANONICAL_LICENSED,
+  "licensed JCS must byte-match the Rust canonicalizer"
+);
 
 // JCS invariants: key order independence, number form, array order preserved.
 assert.strictEqual(jcs({ b: 1, a: 2 }), '{"a":2,"b":1}');
@@ -271,6 +299,27 @@ async function signingTest() {
   const ok = await sc.verify({ name: "ECDSA", hash: "SHA-256" }, kp.publicKey, sig, bytes);
   assert.ok(ok, "the detached ES256 signature must verify over the JCS bytes");
   assert.strictEqual(sig.length, 64, "raw R||S signature is 64 bytes");
+
+  // A license rides in the SIGNED content (ADR 0022): the emitted annotation
+  // carries `rights` and the detached signature still verifies over it.
+  const licAnn = await buildSignedAnnotation(
+    "assessing",
+    "https://example.com/item/1",
+    starBody(4),
+    ident,
+    "2026-06-21T10:00:00Z",
+    "https://creativecommons.org/licenses/by/4.0/"
+  );
+  assert.strictEqual(licAnn.rights, "https://creativecommons.org/licenses/by/4.0/");
+  const { signature: licSig, ...licContent } = licAnn;
+  const licBytes = new TextEncoder().encode(jcs(licContent));
+  const licRaw = Uint8Array.from(
+    Buffer.from(licSig.sig.replace(/-/g, "+").replace(/_/g, "/"), "base64")
+  );
+  assert.ok(
+    await sc.verify({ name: "ECDSA", hash: "SHA-256" }, kp.publicKey, licRaw, licBytes),
+    "the signature covers the rights field"
+  );
 
   // --- signed delete document (right to erasure, ADR 0021) -----------------
   // buildSignedDelete must use the IDENTICAL encoding to annotation signing:
@@ -438,6 +487,21 @@ async function eventsTest() {
   assert.strictEqual(published.annotation.body[0]["schema:ratingValue"], 5);
   assert.ok(!erroredOnOk, "no error event on success");
   assert.strictEqual(sent.length, 1, "exactly one publish POST");
+
+  // 1b) data-license → the published annotation carries `rights` (ADR 0022);
+  // without the attribute, no `rights` key is sent at all (case 1 above).
+  assert.strictEqual(sent[0].body.rights, undefined, "no data-license -> no rights");
+  const licEl = new Stars();
+  licEl.setAttribute("data-target", "https://example.com/item/ev");
+  licEl.setAttribute("data-publish", "https://feedback.example/annotations/");
+  licEl.setAttribute("data-license", "https://creativecommons.org/licenses/by/4.0/");
+  await licEl.submit("assessing", starBody(3));
+  assert.strictEqual(sent.length, 2, "second publish POST");
+  assert.strictEqual(
+    sent[1].body.rights,
+    "https://creativecommons.org/licenses/by/4.0/",
+    "data-license lands on the built annotation's rights"
+  );
 
   // 2) Failure: a non-OK publish must fire freedback:error with the error.
   widgets.state.__fetch = () =>

@@ -31,6 +31,18 @@ pub fn to_ntriples(ann: &Annotation) -> String {
         w.typed_literal(s, &iri(DCTERMS, "created"), created, XSD_DATETIME);
     }
 
+    // Data licensing (ADR 0022): `rights` maps to dcterms:rights. An IRI-shaped
+    // value is emitted as an IRI node; anything else is emitted as a string
+    // literal so the SHACL `sh:nodeKind sh:IRI` constraint (the authority,
+    // INVARIANT 3) rejects it — this module models structure, not rules.
+    if let Some(rights) = &ann.rights {
+        if is_absolute_iri(rights) {
+            w.iri_obj(s, &iri(DCTERMS, "rights"), rights);
+        } else {
+            w.string_literal(s, &iri(DCTERMS, "rights"), rights);
+        }
+    }
+
     // Target
     match &ann.target {
         Target::Iri(t) => w.iri_obj(s, &iri(OA, "hasTarget"), t),
@@ -143,6 +155,29 @@ fn iri(ns: &str, term: &str) -> String {
     format!("{ns}{term}")
 }
 
+/// Whether a string is shaped like an absolute IRI that can be written inside
+/// an N-Triples `<…>` IRIREF: a scheme (RFC 3986 §3.1) followed by characters
+/// the IRIREF production allows. Deliberately syntactic — SHACL's
+/// `sh:nodeKind sh:IRI` is the validation authority; this only decides whether
+/// the value is representable as an IRI node at all.
+fn is_absolute_iri(s: &str) -> bool {
+    let Some((scheme, rest)) = s.split_once(':') else {
+        return false;
+    };
+    let scheme_ok = !scheme.is_empty()
+        && scheme
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    let chars_ok = rest.chars().chain(scheme.chars()).all(|c| {
+        c as u32 > 0x20 && !matches!(c, '<' | '>' | '"' | '{' | '}' | '|' | '^' | '`' | '\\')
+    });
+    scheme_ok && chars_ok
+}
+
 /// Format a double as a canonical xsd:double lexical form with a decimal point.
 fn fmt_double(v: f64) -> String {
     if v == v.trunc() && v.is_finite() {
@@ -213,6 +248,31 @@ mod tests {
         ));
         assert!(nt
             .contains("<http://www.w3.org/ns/oa#motivatedBy> <http://www.w3.org/ns/oa#assessing>"));
+    }
+
+    #[test]
+    fn emits_rights_as_iri_and_non_iri_as_literal() {
+        let base = || {
+            Annotation::new(
+                Motivation::Assessing,
+                Target::Iri("https://example.com/x".into()),
+                vec![Body::star(4.0)],
+            )
+        };
+        // An IRI-shaped license becomes an IRI node (satisfies sh:nodeKind sh:IRI).
+        let nt = to_ntriples(&base().with_rights("https://creativecommons.org/licenses/by/4.0/"));
+        assert!(nt.contains(
+            "<http://purl.org/dc/terms/rights> <https://creativecommons.org/licenses/by/4.0/>"
+        ));
+        // A non-IRI value is still representable — as a literal, which SHACL
+        // (the validation authority) then rejects via sh:nodeKind sh:IRI.
+        let nt = to_ntriples(&base().with_rights("not an iri"));
+        assert!(nt.contains(
+            "<http://purl.org/dc/terms/rights> \"not an iri\"^^<http://www.w3.org/2001/XMLSchema#string>"
+        ));
+        // Absent rights emits no dcterms:rights triple at all.
+        let nt = to_ntriples(&base());
+        assert!(!nt.contains("dc/terms/rights"));
     }
 
     #[test]

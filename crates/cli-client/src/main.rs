@@ -46,6 +46,13 @@ mod cli {
             thumb: Option<bool>,
             #[arg(long)]
             comment: Option<String>,
+            /// License IRI to distribute this feedback under (sets the W3C
+            /// annotation `rights` property, e.g.
+            /// `https://creativecommons.org/licenses/by/4.0/`). Optional —
+            /// without it the feedback falls under the server's default
+            /// license, advertised in `/.well-known/freedback` (ADR 0022).
+            #[arg(long)]
+            license: Option<String>,
             /// Reuse (or create) a persistent identity instead of a fresh
             /// throwaway one — load the PKCS#8 PEM keypair from this file if
             /// it exists, otherwise generate one and save it here. Lets later
@@ -102,6 +109,7 @@ mod cli {
                 scalar,
                 thumb,
                 comment,
+                license,
                 key_file,
             } => {
                 let body = if let Some(v) = stars {
@@ -123,6 +131,12 @@ mod cli {
                 let now = OffsetDateTime::now_utc().format(&Rfc3339)?;
                 let mut ann =
                     Annotation::new(motivation, Target::Iri(target), vec![body]).with_created(now);
+                // Explicit data license (ADR 0022): part of the content, so it
+                // must be set BEFORE signing (it participates in the canonical
+                // bytes the signature covers).
+                if let Some(license) = license {
+                    ann = ann.with_rights(license);
+                }
                 // Self-signed identity: ephemeral by default, or loaded/saved
                 // from --key-file so repeated invocations share one issuer.
                 let id = match &key_file {
