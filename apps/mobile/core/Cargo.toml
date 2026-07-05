@@ -1,0 +1,35 @@
+[package]
+name = "freedback-app-core"
+description = "Freedback mobile app core: input resolution, identity, journal, and feedback orchestration. Host-testable, no Tauri dependencies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "freedback_app_core"
+
+[dependencies]
+# The protocol core: model, JCS dedup ids, P-256 identity, delete documents.
+# No local validation (the server validates on write), so the native-only
+# RDF/validation chain stays out — same posture as the cli/advanced clients.
+freedback-protocol = { path = "../../../crates/protocol-lib", default-features = false }
+# Read / write / delete / sync over HTTP (reqwest + rustls — no OpenSSL,
+# which is what makes the Android cross-build painless).
+freedback-cli-client = { path = "../../../crates/cli-client", default-features = false, features = ["native"] }
+redb = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+# In-process feedback server + in-memory store for the UX-path e2e tests,
+# exactly like crates/cli-client/tests/e2e.rs.
+freedback-feedback-server = { path = "../../../crates/feedback-server" }
+freedback-storage = { path = "../../../crates/storage" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tempfile = "3"
