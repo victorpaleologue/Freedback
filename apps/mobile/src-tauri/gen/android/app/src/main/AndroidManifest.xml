@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- AndroidTV support -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.freedback_app"
+        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <!-- CUSTOMIZED (keep when regenerating with `tauri android init`):
+             MainActivity declares the freedback:// deep-link scheme, and MUST
+             stay the FIRST <activity> element — the deep-link plugin's
+             build.rs injects the configured intent-filters (the freedback
+             scheme + the https://freedback.net/l App Link) before the first
+             </activity> closing tag it finds. -->
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:launchMode="singleTask"
+            android:label="@string/main_activity_title"
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- AndroidTV support -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- The freedback:// scheme ShareActivity forwards to. Declared
+                 explicitly so the share bridge works independent of the
+                 plugin's build-time injection (which adds an equivalent
+                 filter plus the https://freedback.net/l App Link). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="freedback" />
+            </intent-filter>
+        </activity>
+
+        <!-- CUSTOMIZED: dedicated share entry point ("Look up feedback…").
+             Reads ACTION_SEND / ACTION_PROCESS_TEXT text, forwards it to
+             MainActivity as a freedback://share deep link, and finishes. -->
+        <activity
+            android:name=".ShareActivity"
+            android:label="@string/share_activity_title"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <provider
+          android:name="androidx.core.content.FileProvider"
+          android:authorities="${applicationId}.fileprovider"
+          android:exported="false"
+          android:grantUriPermissions="true">
+          <meta-data
+            android:name="android.support.FILE_PROVIDER_PATHS"
+            android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>
