@@ -3,9 +3,9 @@
 Drop-in **feedback widgets** for [Freedback](https://freedback.net/) — a
 federated, open feedback protocol whose native wire format is W3C Web Annotation
 JSON-LD. The widgets are dependency-free **custom elements**: `<freedback-stars>`,
-`<freedback-thumb>`, `<freedback-scalar>`, `<freedback-comment>`, and
-`<freedback-tag>`. They work in any framework (or plain HTML), configured
-entirely through `data-*` attributes.
+`<freedback-thumb>`, `<freedback-scalar>`, `<freedback-comment>`,
+`<freedback-issue>`, and `<freedback-tag>`. They work in any framework (or
+plain HTML), configured entirely through `data-*` attributes.
 
 ## Install
 
@@ -14,7 +14,7 @@ npm add @freedback/widgets
 ```
 
 ```ts
-// Register the five custom elements (side-effect import). Do this once.
+// Register the six custom elements (side-effect import). Do this once.
 import "@freedback/widgets";
 ```
 
@@ -57,6 +57,12 @@ elements globally with no bundler:
 | `data-token` | an OAuth bearer instead of `data-sign` (`data-sign` wins if both) |
 | `data-worst` / `data-best` / `data-step` | `<freedback-scalar>` scale |
 
+`<freedback-issue>` is the problem-report widget (the third feedback kind of
+the original 2014 proto): a textarea plus a **Report** button, listing the
+issues reported for the target. On the wire it is a plain W3C
+`oa:TextualBody` under the **standard `oa:editing` motivation** ("request a
+change or edit to the Target resource") — zero new vocabulary (ADR 0023).
+
 ## Outcome events
 
 After a publish or delete, each widget dispatches a `CustomEvent` on its host
@@ -76,7 +82,8 @@ el.addEventListener("freedback:published", (e) => console.log(e.detail.response)
 With `data-sign`, the widgets recognise the visitor's **own** annotations in
 fetched lists (their `creator.id` matches the browser identity) and render a
 small `×` control (`.fb-del`, `aria-label="Delete my feedback"`): per item on
-`<freedback-comment>`, per own-tag chip on `<freedback-tag>`, and as a
+`<freedback-comment>` and `<freedback-issue>`, per own-tag chip on
+`<freedback-tag>`, and as a
 post-publish **undo** next to the aggregate on the rating widgets. Clicking it
 signs a delete document with the same stored P-256 key that signed the
 annotation and `DELETE`s it on the feedback server (ADR 0021) — the server

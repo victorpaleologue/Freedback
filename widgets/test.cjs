@@ -155,6 +155,15 @@ assert.deepStrictEqual(textBodies(commented, "tagging"), []);
 const tagged = { body: [textBody("rust", "tagging")] };
 assert.deepStrictEqual(textBodies(tagged, "tagging"), ["rust"]);
 
+// issue / problem report (ADR 0023): an oa:TextualBody with the standard
+// "editing" purpose/motivation — zero new vocabulary.
+const issued = { body: [textBody("broken link", "editing")] };
+assert.deepStrictEqual(textBodies(issued, "editing"), ["broken link"]);
+assert.deepStrictEqual(textBodies(issued, "commenting"), []);
+const issueAnn = baseAnnotation("editing", "https://ex/1", textBody("broken link", "editing"));
+assert.strictEqual(issueAnn.motivation, "editing");
+assert.strictEqual(issueAnn.body[0].purpose, "editing");
+
 // readUrl appends the encoded target.
 assert.strictEqual(readUrl("http://h/index", "https://ex/1"), "http://h/index?target=https%3A%2F%2Fex%2F1");
 assert.strictEqual(readUrl("http://h/index?x=1", "a"), "http://h/index?x=1&target=a");
@@ -201,6 +210,30 @@ assert.strictEqual(
   jcs(licensedContent),
   EXPECTED_CANONICAL_LICENSED,
   "licensed JCS must byte-match the Rust canonicalizer"
+);
+
+// Cross-language pin for the ISSUE feedback type (ADR 0023): this exact string
+// is also asserted against the Rust canonicalizer in
+// crates/protocol-lib/src/canonical.rs (issue_canonical_bytes_and_dedup_id_are_
+// pinned), so an issue signed in the browser verifies server-side.
+const EXPECTED_CANONICAL_ISSUE =
+  '{"@context":["http://www.w3.org/ns/anno.jsonld","https://freedback.net/ns/context.jsonld"],' +
+  '"body":[{"format":"text/plain","purpose":"editing","type":"TextualBody",' +
+  '"value":"the checkout button does nothing"}],' +
+  '"conformsTo":"https://freedback.net/profile/1","created":"2026-06-21T10:00:00Z",' +
+  '"creator":{"id":"urn:freedback:key:abc"},"motivation":"editing",' +
+  '"target":"https://example.com/item/1","type":"Annotation"}';
+const issueContent = canonicalContent(
+  "editing",
+  "https://example.com/item/1",
+  textBody("the checkout button does nothing", "editing"),
+  "urn:freedback:key:abc",
+  "2026-06-21T10:00:00Z"
+);
+assert.strictEqual(
+  jcs(issueContent),
+  EXPECTED_CANONICAL_ISSUE,
+  "issue JCS must byte-match the Rust canonicalizer"
 );
 
 // JCS invariants: key order independence, number form, array order preserved.
@@ -460,6 +493,7 @@ async function identityTest() {
 async function eventsTest() {
   const Stars = widgets.defined["freedback-stars"];
   assert.ok(Stars, "custom elements registered in the sandbox");
+  assert.ok(widgets.defined["freedback-issue"], "<freedback-issue> is registered (ADR 0023)");
 
   // 1) Success: a 200 publish must fire freedback:published with the response.
   const sent = [];

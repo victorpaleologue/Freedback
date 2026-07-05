@@ -17,8 +17,8 @@
       &token=<oauth-bearer>        (optional; selects the data-token path)
       &auth=sign|token             (which auth path to wire onto the widgets)
 
-    Each widget kind gets an id (#stars, #thumb, #scalar, #comment, #tag) so the
-    Playwright spec can find and drive it precisely.
+    Each widget kind gets an id (#stars, #thumb, #scalar, #comment, #issue,
+    #tag) so the Playwright spec can find and drive it precisely.
   -->
   <div id="widgets"></div>
   <!-- Absolute path: this page is served at /e2e/e2e.html, but the widget
@@ -40,6 +40,7 @@
         ["freedback-thumb", "thumb", {}],
         ["freedback-scalar", "scalar", { "data-worst": "0", "data-best": "10", "data-step": "1" }],
         ["freedback-comment", "comment", {}],
+        ["freedback-issue", "issue", {}],
         ["freedback-tag", "tag", {}],
       ];
       for (const [tag, id, extra] of kinds) {

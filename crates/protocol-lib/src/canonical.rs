@@ -177,6 +177,64 @@ mod tests {
         assert!(json.get("rights").is_none());
     }
 
+    /// Cross-language pin for the ISSUE feedback type (ADR 0023): this exact
+    /// string is also asserted by the widgets' JS canonicalizer over the same
+    /// content (`widgets/test.cjs`, `EXPECTED_CANONICAL_ISSUE`). Fixed creator
+    /// and timestamp so the bytes — and the derived dedup id — are stable
+    /// across runs and languages.
+    #[test]
+    fn issue_canonical_bytes_and_dedup_id_are_pinned() {
+        let ann = Annotation::new(
+            Motivation::Editing,
+            Target::Iri("https://example.com/item/1".into()),
+            vec![Body::issue("the checkout button does nothing")],
+        )
+        .with_created("2026-06-21T10:00:00Z")
+        .with_creator(crate::model::Creator::new("urn:freedback:key:abc"));
+        let expected = concat!(
+            r#"{"@context":["http://www.w3.org/ns/anno.jsonld","https://freedback.net/ns/context.jsonld"],"#,
+            r#""body":[{"format":"text/plain","purpose":"editing","type":"TextualBody","#,
+            r#""value":"the checkout button does nothing"}],"#,
+            r#""conformsTo":"https://freedback.net/profile/1","created":"2026-06-21T10:00:00Z","#,
+            r#""creator":{"id":"urn:freedback:key:abc"},"motivation":"editing","#,
+            r#""target":"https://example.com/item/1","type":"Annotation"}"#
+        );
+        let bytes = canonical_bytes(&ann).unwrap();
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected);
+        assert_eq!(
+            dedup_id(&ann).unwrap(),
+            "dba0077f4239ac204481d458fc284f3d039e1c4f30e7c8cba7aaeb74b8696539",
+            "the issue dedup id is content-derived and stable"
+        );
+    }
+
+    /// A signature over an issue annotation verifies, and the same fixed key +
+    /// timestamp always signs the same canonical bytes (deterministic ES256,
+    /// RFC 6979) — so signatures and dedup ids are stable across runs.
+    #[test]
+    fn issue_signs_and_verifies_deterministically() {
+        let identity = crate::identity::Identity::generate();
+        let build = |id: &crate::identity::Identity| {
+            let mut ann = Annotation::new(
+                Motivation::Editing,
+                Target::Iri("https://example.com/item/1".into()),
+                vec![Body::issue("the checkout button does nothing")],
+            )
+            .with_created("2026-06-21T10:00:00Z")
+            .with_creator(crate::model::Creator::new(id.issuer_id().unwrap()));
+            id.sign_annotation(&mut ann).unwrap();
+            ann
+        };
+        let a = build(&identity);
+        let b = build(&identity);
+        crate::identity::verify_annotation(&a).expect("issue signature verifies");
+        assert_eq!(
+            a.signature, b.signature,
+            "same key + same content => same signature"
+        );
+        assert_eq!(dedup_id(&a).unwrap(), dedup_id(&b).unwrap());
+    }
+
     #[test]
     fn dedup_id_changes_with_content() {
         let a = sample();

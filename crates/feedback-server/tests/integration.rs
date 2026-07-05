@@ -192,6 +192,87 @@ async fn oauth_path_stamps_creator() {
 }
 
 #[tokio::test]
+async fn issue_report_ingests_and_round_trips() {
+    // The issue / problem-report feedback type (ADR 0023): an oa:TextualBody
+    // under the standard oa:editing motivation. Both the exact serde shape
+    // (signed path) and an aliased JSON-LD form (bearer path) must ingest,
+    // validate, and read back.
+    let app = app_with_oauth("tok", "app", "u");
+
+    // 1) Signed, canonical serde shape.
+    let id = Identity::generate();
+    let mut ann = Annotation::new(
+        Motivation::Editing,
+        Target::Iri("https://example.com/item/7".into()),
+        vec![FbBody::issue("the checkout button does nothing")],
+    )
+    .with_created("2026-06-21T10:00:00Z");
+    ann.creator = Some(freedback_protocol::Creator::new(id.issuer_id().unwrap()));
+    id.sign_annotation(&mut ann).unwrap();
+    let (status, _h, body) = send(
+        &app,
+        "POST",
+        "/annotations/",
+        None,
+        Some(serde_json::to_value(&ann).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "signed issue accepted: {body}");
+    assert_eq!(body["motivation"], "editing");
+    assert_eq!(body["body"][0]["type"], "TextualBody");
+    assert_eq!(body["body"][0]["purpose"], "editing");
+
+    // 2) Aliased JSON-LD form (prefixed motivation/purpose, single body object)
+    // over the bearer path normalizes to the same wire shape.
+    let variant = serde_json::json!({
+        "@context": "http://www.w3.org/ns/anno.jsonld",
+        "type": "Annotation",
+        "motivation": "oa:editing",
+        "created": "2026-06-21T10:00:01Z",
+        "target": "https://example.com/item/7",
+        "body": { "type": "oa:TextualBody", "value": "images 404", "purpose": "oa:editing" }
+    });
+    let (status, _h, body) = send(&app, "POST", "/annotations/", Some("tok"), Some(variant)).await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "aliased issue accepted: {body}"
+    );
+    assert_eq!(body["motivation"], "editing");
+    assert_eq!(body["body"][0]["value"], "images 404");
+    assert_eq!(body["body"][0]["purpose"], "editing");
+
+    // 3) Both read back under the target.
+    let (status, _h, page) = send(
+        &app,
+        "GET",
+        "/annotations/?target=https://example.com/item/7",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["partOf"]["total"], 2);
+
+    // 4) An empty issue text is rejected by SHACL (422), like empty comments.
+    let empty = Annotation::new(
+        Motivation::Editing,
+        Target::Iri("https://example.com/item/7".into()),
+        vec![FbBody::issue("")],
+    )
+    .with_created("2026-06-21T10:00:02Z");
+    let (status, _h, body) = send(
+        &app,
+        "POST",
+        "/annotations/",
+        Some("tok"),
+        Some(serde_json::to_value(&empty).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+}
+
+#[tokio::test]
 async fn accepts_varied_jsonld_serialization() {
     // JSON-LD is primary: a conformant-but-differently-serialized annotation
     // (single body object, target as an object, prefixed property names,

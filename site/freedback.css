@@ -303,3 +303,17 @@ footer {
 .fb-del:hover,
 .fb-del:focus-visible { color: var(--fb-danger); background: var(--fb-surface); }
 .fb-chip .fb-del { margin-left: 0.15rem; padding: 0 0.1rem; font-size: 0.85rem; }
+
+/* <freedback-issue> (problem reports, ADR 0023): shares the comment look;
+ * each reported issue is marked with a leading ⚠. */
+.fb-issue .fb-row { gap: 0.4rem; margin-bottom: 0.5rem; }
+.fb-issue button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--fb-line);
+  border-radius: 6px;
+  background: var(--fb-soft);
+  color: var(--fb-ink);
+  cursor: pointer;
+}
+.fb-issue textarea.fb-in { resize: vertical; font: inherit; }
+.fb-issue .fb-list li.fb-issue-item::before { content: "⚠ "; }

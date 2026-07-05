@@ -3,7 +3,7 @@
 //
 // Renders the custom elements in a real DOM (Chromium) against an in-process
 // feedback + collection stack and drives publish + read-back through the actual
-// UI for stars / scalar / thumb / comment / tag, over BOTH auth paths:
+// UI for stars / scalar / thumb / comment / issue / tag, over BOTH auth paths:
 //   - data-sign  : self-signed P-256 via WebCrypto (the federating identity)
 //   - data-token : an OAuth bearer (the siloed identity)
 //
@@ -84,6 +84,17 @@ test("e2e harness: self-signed publish + read back for all widget kinds", async 
   await page.locator("#comment form button").click();
   await expect(page.locator("#comment .fb-list li")).toHaveCount(1, { timeout: 15000 });
   await expect(page.locator("#comment .fb-list li")).toContainText("great work", { timeout: 15000 });
+
+  // issue (ADR 0023): report a problem through the textarea; the signed
+  // annotation (oa:TextualBody + the standard oa:editing motivation) is
+  // accepted by the REAL feedback server and read back into the list.
+  await page.locator("#issue .fb-in").fill("the checkout button does nothing");
+  await page.locator("#issue form button").click();
+  await expect(page.locator("#issue .fb-list li")).toHaveCount(1, { timeout: 15000 });
+  await expect(page.locator("#issue .fb-list li")).toContainText("the checkout button does nothing", { timeout: 15000 });
+  await expect(page.locator("#issue .fb-list li")).toHaveClass(/fb-issue-item/);
+  // Being the visitor's OWN report, it carries the delete affordance too.
+  await expect(page.locator("#issue .fb-list li .fb-del")).toBeVisible({ timeout: 15000 });
 
   // tag (own chip also carries the `×` delete control)
   await page.locator("#tag .fb-in").fill("rust");

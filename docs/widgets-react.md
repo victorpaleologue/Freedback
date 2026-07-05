@@ -2,7 +2,7 @@
 
 The Freedback widgets are **vanilla [custom elements](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements)**
 (`<freedback-stars>`, `<freedback-thumb>`, `<freedback-scalar>`,
-`<freedback-comment>`, `<freedback-tag>`) shipped as a single dependency-free
+`<freedback-comment>`, `<freedback-issue>`, `<freedback-tag>`) shipped as a single dependency-free
 script, `freedback-widgets.js`. Because they are real DOM elements configured
 entirely through `data-*` attributes, **React renders them natively** — React
 always forwards `data-*` (and `aria-*`) attributes to the DOM, so for the common
@@ -61,7 +61,7 @@ That's it. The widget renders the current aggregate from `data-read`, and
 [outcome events](#outcome-events-freedbackpublished--freedbackdeleted--freedbackerror).
 
 > **No build step?** You can still load the canonical script directly — it
-> registers the same five elements as a global side effect:
+> registers the same six elements as a global side effect:
 >
 > ```html
 > <script src="https://freedback.net/widgets/freedback-widgets.js"></script>
@@ -78,7 +78,7 @@ That's it. The widget renders the current aggregate from `data-read`, and
 npm add @freedback/widgets
 ```
 
-Register the five custom elements once for the whole app with a **side-effect
+Register the six custom elements once for the whole app with a **side-effect
 import** (registration is global and idempotent — do it once, not per component):
 
 ```ts
@@ -106,7 +106,7 @@ import { jcs, starBody, exportIdentity, rotateIdentity } from "@freedback/widget
 
 `@freedback/widgets` ships its own `.d.ts`. It augments both
 `React.JSX.IntrinsicElements` (React 19) and the global `JSX` namespace (React
-≤ 18), **and** the framework-neutral `HTMLElementTagNameMap`, so all five tags
+≤ 18), **and** the framework-neutral `HTMLElementTagNameMap`, so all six tags
 type-check with **zero consumer setup** — no hand-written shim. (Older releases
 told you to add an `src/freedback.d.ts`; that is no longer needed — delete it if
 you have one.) The tags also type the `onPublished` / `onDeleted` / `onError`
@@ -137,6 +137,9 @@ function Feedback({ url }: { url: string }) {
       <h3>Comments</h3>
       <freedback-comment data-target={url} data-read={collect} data-publish={publish} data-sign="" />
 
+      <h3>Report a problem</h3>
+      <freedback-issue data-target={url} data-read={collect} data-publish={publish} data-sign="" />
+
       <h3>Tags</h3>
       <freedback-tag data-target={url} data-read={collect} data-publish={publish} data-sign="" />
     </section>
@@ -156,6 +159,12 @@ function Feedback({ url }: { url: string }) {
 | `data-license` | — | optional license IRI (e.g. `https://creativecommons.org/licenses/by/4.0/`) set as the published annotation's W3C `rights` property, on both the signed and bearer paths (data licensing, ADR 0022). Omit to fall under the server's default license (`/.well-known/freedback`). |
 | `data-worst` / `data-best` / `data-step` | scalar only | the `<freedback-scalar>` scale. |
 
+`<freedback-issue>` (ADR 0023) is the problem-report widget: a textarea plus a
+**Report** button, listing the issues reported for the target (each marked with
+a `⚠` via the `.fb-issue` styles). On the wire it publishes a plain W3C
+`oa:TextualBody` under the **standard `oa:editing` motivation** — zero new
+vocabulary. It takes the same attributes as `<freedback-comment>`.
+
 ### A reusable wrapper (optional)
 
 Plain JSX is fine, but if you use the widgets in many places — or want to be
@@ -167,7 +176,7 @@ then appends it:
 // FreedbackWidget.tsx
 import { useEffect, useRef } from "react";
 
-type Kind = "stars" | "thumb" | "scalar" | "comment" | "tag";
+type Kind = "stars" | "thumb" | "scalar" | "comment" | "issue" | "tag";
 
 export function FreedbackWidget({ kind, ...data }: { kind: Kind } & Record<`data-${string}`, string>) {
   const host = useRef<HTMLDivElement>(null);
@@ -206,7 +215,8 @@ demo at `https://freedback.net`).
   (issue #27).
 - **Delete my feedback (right to erasure).** With `data-sign`, the widgets
   recognise the visitor's **own** annotations in fetched lists and render a
-  small `×` control (`.fb-del`): per comment on `<freedback-comment>`, per
+  small `×` control (`.fb-del`): per item on `<freedback-comment>` and
+  `<freedback-issue>`, per
   own-tag chip on `<freedback-tag>`, and as a post-publish **undo** next to the
   aggregate on the rating widgets. It signs a delete document with the same
   stored key and `DELETE`s the annotation on the server (ADR 0021); observe the

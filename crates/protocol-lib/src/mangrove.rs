@@ -141,6 +141,10 @@ pub fn annotation_to_review(ann: &Annotation, iss_pem: &str) -> Result<Value> {
                 rating = Some(if *up { 100 } else { 0 });
             }
             Body::Comment { value } => opinion = Some(value.clone()),
+            // An issue / problem report (ADR 0023) is free text about the
+            // target; Mangrove has no dedicated field, so it exports as the
+            // review's `opinion` (lossy: it round-trips as a comment).
+            Body::Issue { value } => opinion = Some(value.clone()),
             // A tag has no Mangrove equivalent field; fold it into images as a
             // labelled marker so it is not silently dropped (round-trips via
             // metadata is lossy, so we keep tags in `metadata.tags`).

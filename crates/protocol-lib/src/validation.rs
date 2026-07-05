@@ -542,6 +542,29 @@ mod tests {
     }
 
     #[test]
+    fn valid_issue_conforms() {
+        // Issue / problem report (ADR 0023): an oa:TextualBody with the
+        // standard oa:editing motivation validates under the existing
+        // TextualBodyShape — no new shape, no new vocabulary.
+        let out = validate_annotation(&Annotation::new(
+            Motivation::Editing,
+            Target::Iri("https://example.com/x".into()),
+            vec![Body::issue("the checkout button does nothing")],
+        ))
+        .unwrap();
+        assert!(out.conforms, "expected conforms, got {:?}", out.violations);
+    }
+
+    #[test]
+    fn empty_issue_is_rejected() {
+        let out = validate_annotation(&ann_with(Body::Issue {
+            value: String::new(),
+        }))
+        .unwrap();
+        assert!(!out.conforms, "an empty issue text must be rejected");
+    }
+
+    #[test]
     fn valid_comment_conforms() {
         let out = validate_annotation(&Annotation::new(
             Motivation::Commenting,

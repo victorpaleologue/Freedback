@@ -1,7 +1,7 @@
 // Type definitions for @freedback/widgets.
 //
 // Importing "@freedback/widgets" (the ESM entry) for its side effect registers
-// the five custom elements; these types make the tags type-check in JSX (React
+// the six custom elements; these types make the tags type-check in JSX (React
 // 19 and React <= 18) and in framework-neutral DOM code, with ZERO consumer
 // setup, plus types for the helper/identity exports and the outcome events.
 
@@ -111,6 +111,7 @@ export interface FreedbackStarsElement extends FreedbackElement {}
 export interface FreedbackThumbElement extends FreedbackElement {}
 export interface FreedbackScalarElement extends FreedbackElement {}
 export interface FreedbackCommentElement extends FreedbackElement {}
+export interface FreedbackIssueElement extends FreedbackElement {}
 export interface FreedbackTagElement extends FreedbackElement {}
 
 // --- annotation / body shapes (mirror the canonical wire form) ----------------
@@ -304,6 +305,7 @@ declare global {
     "freedback-thumb": FreedbackThumbElement;
     "freedback-scalar": FreedbackScalarElement;
     "freedback-comment": FreedbackCommentElement;
+    "freedback-issue": FreedbackIssueElement;
     "freedback-tag": FreedbackTagElement;
   }
 
@@ -350,6 +352,9 @@ declare module "react" {
       "freedback-comment": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> &
         FreedbackDataAttributes &
         FreedbackBaseProps;
+      "freedback-issue": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> &
+        FreedbackDataAttributes &
+        FreedbackBaseProps;
       "freedback-tag": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> &
         FreedbackDataAttributes &
         FreedbackBaseProps;
@@ -367,6 +372,7 @@ declare global {
       "freedback-thumb": GlobalFreedbackProps;
       "freedback-scalar": GlobalFreedbackProps;
       "freedback-comment": GlobalFreedbackProps;
+      "freedback-issue": GlobalFreedbackProps;
       "freedback-tag": GlobalFreedbackProps;
     }
   }

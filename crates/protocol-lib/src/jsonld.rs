@@ -123,6 +123,7 @@ fn parse_motivation(v: Option<&Value>) -> Result<Motivation> {
         "assessing" => Ok(Motivation::Assessing),
         "commenting" => Ok(Motivation::Commenting),
         "tagging" => Ok(Motivation::Tagging),
+        "editing" => Ok(Motivation::Editing),
         other => Err(Error::OutOfBounds(format!("unknown motivation: {other}"))),
     }
 }
@@ -237,6 +238,8 @@ fn parse_body(v: &Value) -> Result<Body> {
             .unwrap_or_default();
         if purpose == "tagging" {
             Ok(Body::Tag { value })
+        } else if purpose == "editing" {
+            Ok(Body::Issue { value })
         } else {
             Ok(Body::Comment { value })
         }
@@ -340,6 +343,38 @@ mod tests {
         });
         let ann = from_jsonld(&doc).unwrap();
         assert!(matches!(ann.body.as_slice(), [Body::Comment { value }] if value == "nice"));
+    }
+
+    #[test]
+    fn issue_variants_normalize_to_same_dedup_id() {
+        // Issue / problem report (ADR 0023): our own serde shape and an
+        // aliased JSON-LD form (prefixed motivation/purpose, single body
+        // object) collapse to the same model → same content address.
+        let canonical = Annotation::new(
+            Motivation::Editing,
+            Target::Iri("https://example.com/x".into()),
+            vec![Body::issue("broken link")],
+        );
+        let own = serde_json::to_value(&canonical).unwrap();
+        assert_eq!(from_jsonld(&own).unwrap(), canonical);
+
+        let variant = serde_json::json!({
+            "@context": "http://www.w3.org/ns/anno.jsonld",
+            "type": "Annotation",
+            "motivation": "oa:editing",
+            "target": "https://example.com/x",
+            "body": { "type": "oa:TextualBody", "value": "broken link", "purpose": "oa:editing" }
+        });
+        let parsed = from_jsonld(&variant).unwrap();
+        assert!(
+            matches!(parsed.body.as_slice(), [Body::Issue { value }] if value == "broken link")
+        );
+        assert_eq!(parsed.motivation, Motivation::Editing);
+        assert_eq!(
+            dedup_id(&parsed).unwrap(),
+            dedup_id(&canonical).unwrap(),
+            "equivalent issue serializations must content-address identically"
+        );
     }
 
     #[test]
