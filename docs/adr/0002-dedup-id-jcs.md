@@ -1,6 +1,6 @@
 # ADR 0002 — Content-addressed dedup id via RFC 8785 JCS
 
-- **Status:** accepted
+- **Status:** accepted (amended by ADR 0021: deletion is real)
 - **Date:** 2026-06-21
 
 ## Context
@@ -43,8 +43,12 @@ ES256 signature, guaranteeing a verifier hashes exactly what the signer signed.
 
 - Determinism is testable: `canonical::tests` assert stability, id-independence,
   and content-sensitivity. Fixtures use fixed keypairs + fixed timestamps.
-- Edits are modeled as new annotations whose predecessor is marked
-  `superseded_by`; the dedup id of an edit differs from the original (content
-  differs), which is correct — they are different states.
+- Edits are modeled as new annotations; the dedup id of an edit differs from
+  the original (content differs), which is correct — they are different states.
+  Deletion is NOT modeled as content (no "delete annotation") — it is a real,
+  author-signed erasure of the record, leaving a content-free tombstone keyed
+  by this dedup id (ADR 0021). Because `created` is part of the content
+  address, a tombstone retires one record without preventing the author from
+  restating the same opinion later (new `created` → new id).
 - Backdated items (older than a sync cursor) can be missed by a plain `gt_iat`
   pull; the advanced client reconciles them with negentropy (see roadmap M7).

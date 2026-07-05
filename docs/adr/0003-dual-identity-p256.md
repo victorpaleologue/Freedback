@@ -1,6 +1,6 @@
 # ADR 0003 — Self-signed P-256 identity (federating) + OAuth silos
 
-- **Status:** accepted
+- **Status:** accepted (extended by ADR 0021: the key also authorizes erasure)
 - **Date:** 2026-06-21
 
 ## Context
@@ -40,3 +40,6 @@ Two identities (INVARIANT 4):
   the test oracle (`identity::tests`).
 - OAuth identity is intentionally non-federating; the collection server must
   treat siloed feedback as lower-trust and never merge it across apps.
+- The creating identity is the OWNER of the annotation: the same key (or the
+  same OAuth `(app_id, user_id)`) that created it authorizes its erasure —
+  right to be forgotten, ADR 0021.

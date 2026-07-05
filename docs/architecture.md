@@ -54,7 +54,10 @@ annotation tooling can read it.
 - **Self-signed P-256** — the public key (PEM) is the portable issuer id. Every
   annotation carries a detached ES256 signature over its RFC 8785 canonical
   bytes. This identity **federates**: any server can verify it with no shared
-  secret. Edits/deletes are append-only, re-signed annotations.
+  secret. It is also the **ownership credential**: signed edits supersede
+  (`(issuer, target)`, newest wins), and signed deletes actually erase — the
+  author's right to be forgotten (ADR 0021). Only a content-free tombstone
+  remains, so caches learn to forget and the id cannot be re-ingested.
 - **App-managed OAuth** — keyed by `(app_id, user_id)`. Creates a
   **local-authority silo**: trustworthy only within that app's domain; it does
   **not** federate. Useful when an app already owns its users.
@@ -72,6 +75,12 @@ read:   GET /annotations/?target=&page=  → FeedbackStore::query
 
 sync:   GET /sync?target=&gt_iat=&latest_edits_only=true
         → only items with iat > cursor, edit-chains collapsed to latest
+
+delete: DELETE /annotations/{dedup_id} + author proof
+        (ES256 over JCS of {"type":"Delete","annotation":id,"created":ts}
+         by the annotation's own key  OR  OAuth bearer→same (app,user))
+        → content erased; content-free tombstone {dedup_id, deleted_at, proof}
+        → GET/re-POST of that id → 410 Gone; caches evict on next sync
 ```
 
 ## Why these choices
