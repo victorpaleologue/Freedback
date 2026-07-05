@@ -223,3 +223,21 @@ footer {
   margin: 0.15em;
   font-size: 0.85rem;
 }
+
+/* "Delete my feedback" (right to erasure, ADR 0021): a small × the widgets
+ * render on the visitor's OWN items (and as post-publish undo on ratings). */
+.fb-del {
+  background: none;
+  border: none;
+  color: var(--fb-muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+  margin-left: 0.35rem;
+  border-radius: 4px;
+  vertical-align: baseline;
+}
+.fb-del:hover,
+.fb-del:focus-visible { color: var(--fb-danger); background: var(--fb-surface); }
+.fb-chip .fb-del { margin-left: 0.15rem; padding: 0 0.1rem; font-size: 0.85rem; }

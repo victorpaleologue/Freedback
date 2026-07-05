@@ -48,19 +48,30 @@ export interface FreedbackPublishedDetail {
 
 /** `detail` of the `freedback:error` CustomEvent. */
 export interface FreedbackErrorDetail {
-  /** The error thrown while publishing. */
+  /** The error thrown while publishing or deleting. */
   error: Error;
+}
+
+/** `detail` of the `freedback:deleted` CustomEvent (right to erasure, ADR 0021). */
+export interface FreedbackDeletedDetail {
+  /** The dedup id of the annotation that was erased. */
+  annotation: string;
+  /** The raw `fetch` Response of the `DELETE` (204 No Content on success). */
+  response: Response;
 }
 
 /** The `freedback:published` CustomEvent dispatched on a widget after success. */
 export type FreedbackPublishedEvent = CustomEvent<FreedbackPublishedDetail>;
 /** The `freedback:error` CustomEvent dispatched on a widget after a failure. */
 export type FreedbackErrorEvent = CustomEvent<FreedbackErrorDetail>;
+/** The `freedback:deleted` CustomEvent dispatched after a successful erasure. */
+export type FreedbackDeletedEvent = CustomEvent<FreedbackDeletedDetail>;
 
 /** The custom event map a Freedback widget element fires. */
 export interface FreedbackEventMap {
   "freedback:published": FreedbackPublishedEvent;
   "freedback:error": FreedbackErrorEvent;
+  "freedback:deleted": FreedbackDeletedEvent;
 }
 
 // --- element interfaces -------------------------------------------------------
@@ -120,6 +131,18 @@ export interface Annotation {
   target: string;
   body: Array<RatingBody | TextualBody>;
   conformsTo: string;
+  signature?: { alg: string; kid: string; sig: string };
+}
+
+/** A right-to-erasure delete document (ADR 0021) — mirrors the Rust
+ *  `DeleteRequest` in `crates/protocol-lib/src/erasure.rs`. The ES256
+ *  signature is computed over the JCS bytes WITHOUT the `signature` field. */
+export interface DeleteDocument {
+  type: "Delete";
+  /** The dedup id (content address) of the annotation to erase. */
+  annotation: string;
+  /** When the delete was issued (RFC 3339). */
+  created: string;
   signature?: { alg: string; kid: string; sig: string };
 }
 
@@ -195,6 +218,13 @@ export function buildSignedAnnotation(
   identity: FreedbackIdentity,
   created?: string
 ): Promise<Annotation>;
+export function deleteDocument(dedupId: string, created?: string): DeleteDocument;
+export function buildSignedDelete(
+  dedupId: string,
+  identity: FreedbackIdentity,
+  created?: string
+): Promise<DeleteDocument>;
+export function dedupFromId(id: string | null | undefined): string | null;
 export function getIdentity(): Promise<FreedbackIdentity>;
 export function generateKeyRecord(subtle: SubtleCrypto): Promise<FreedbackKeyRecord>;
 export function identityFromRecord(
@@ -239,6 +269,9 @@ declare const _default: {
   scalarBody: typeof scalarBody;
   textBody: typeof textBody;
   buildSignedAnnotation: typeof buildSignedAnnotation;
+  deleteDocument: typeof deleteDocument;
+  buildSignedDelete: typeof buildSignedDelete;
+  dedupFromId: typeof dedupFromId;
   getIdentity: typeof getIdentity;
   generateKeyRecord: typeof generateKeyRecord;
   identityFromRecord: typeof identityFromRecord;
@@ -283,8 +316,10 @@ declare global {
 type FreedbackBaseProps = {
   /** `freedback:published` fires after a successful publish (custom event). */
   onPublished?: (event: FreedbackPublishedEvent) => void;
-  /** `freedback:error` fires after a failed publish (custom event). */
+  /** `freedback:error` fires after a failed publish or delete (custom event). */
   onError?: (event: FreedbackErrorEvent) => void;
+  /** `freedback:deleted` fires after a successful erasure (custom event). */
+  onDeleted?: (event: FreedbackDeletedEvent) => void;
 };
 
 // React 19: JSX lives on the `react` module's `JSX` namespace.
