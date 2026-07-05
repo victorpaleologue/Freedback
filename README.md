@@ -1,5 +1,9 @@
 # Freedback
 
+**Everything deserves feedback — especially when we, the people, are
+impacted.** Read the manifesto in [WHY.md](WHY.md) for the vision this project
+has carried since 2014.
+
 > A federated, open protocol for typed feedback on anything with a URI —
 > stars, scalar ratings, thumbs, comments and tags — carried as **W3C Web
 > Annotations** and signed with portable keys, so feedback is no longer locked
