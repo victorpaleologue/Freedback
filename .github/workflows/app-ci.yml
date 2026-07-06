@@ -17,7 +17,8 @@ name: App CI
 
 on:
   push:
-    branches: ["**"]
+    # main only — PR pushes run via pull_request; "**" doubled every run.
+    branches: [main]
     paths: ["apps/mobile/**", ".github/workflows/app-ci.yml"]
   pull_request:
     paths: ["apps/mobile/**", ".github/workflows/app-ci.yml"]
