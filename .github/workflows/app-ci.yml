@@ -161,7 +161,25 @@ jobs:
           tauri --version
       - name: Build the debug APK (aarch64)
         working-directory: apps/mobile/src-tauri
-        run: tauri android build --debug --apk --target aarch64
+        # tauri-cli's Gradle integration re-invokes the `tauri` binary as a
+        # Gradle task (`rustBuild<Arch>Debug`), which connects back to THIS
+        # parent CLI process over a local WebSocket to fetch CLI options
+        # (tauri-cli's mobile/mod.rs `read_options`). That WebSocket server
+        # is started asynchronously, so on rare occasions Gradle's task
+        # graph reaches the rust-build task before the server is accepting
+        # connections yet, and the sub-process's connect attempt is refused
+        # ("failed to read CLI options ... Connection refused", os error
+        # 111) — a known-flaky upstream tauri-cli startup race, not a bug in
+        # our build. Retry a few times rather than failing the job over it.
+        run: |
+          for attempt in 1 2 3; do
+            if tauri android build --debug --apk --target aarch64; then
+              exit 0
+            fi
+            echo "::warning::tauri android build (aarch64) failed on attempt ${attempt} (possible tauri-cli CLI-options WebSocket startup race) — retrying"
+            sleep 5
+          done
+          exit 1
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -212,7 +230,21 @@ jobs:
           tauri --version
       - name: Pre-build the x86_64 debug app (rust + gradle, no emulator yet)
         working-directory: apps/mobile/src-tauri
-        run: tauri android build --debug --apk --target x86_64
+        # See the aarch64 build step in the `android-build` job for the full
+        # explanation: this retries a rare tauri-cli mobile-build startup
+        # race (parent CLI's CLI-options WebSocket server vs. Gradle's
+        # rust-build task), not a bug in our own build. Applied to both
+        # jobs for consistency since either target can hit it on a given
+        # day.
+        run: |
+          for attempt in 1 2 3; do
+            if tauri android build --debug --apk --target x86_64; then
+              exit 0
+            fi
+            echo "::warning::tauri android build (x86_64) failed on attempt ${attempt} (possible tauri-cli CLI-options WebSocket startup race) — retrying"
+            sleep 5
+          done
+          exit 1
       - name: Run the ShareActivity intent tests on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
