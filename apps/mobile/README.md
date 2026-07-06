@@ -127,12 +127,25 @@ with `tauri android init`, you MUST preserve:
 
 ## Roadmap notes
 
-- **Camera scanning**: the Home screen's "Scan (soon)" button is the landing
-  spot for the barcode-scanner plugin (M3).
-- **Issue reports**: `Body::Issue` (ADR 0023) has landed in `freedback-protocol`;
-  `FeedbackView::issues` now aggregates them. The remaining `// TODO(issue-type)`
-  seam is submission: `Contribution` and the composer UI don't yet expose an
-  "Issue" action, so issues can only be read, not created, from the app.
+- **Camera scanning**: `tauri-plugin-barcode-scanner` (official, Android/iOS)
+  is wired for the Home screen's Scan button and "My key"'s Scan-QR-to-import
+  button. It's a **mobile-only** crate (`#![cfg(mobile)]` in its own source —
+  it doesn't compile for desktop at all), so it's a
+  `[target.'cfg(any(target_os = "android", target_os = "ios"))']` dependency,
+  registered only `#[cfg(mobile)]`, with its own platform-scoped
+  `capabilities/mobile.json`. `scanning_supported()` (a `cfg!(mobile)` check)
+  keeps both buttons disabled on desktop — confirmed by e2e. **Not yet
+  verified**: an actual Android build with this plugin linked (no NDK in the
+  sandbox this landed from) — `app-ci.yml`'s `android-build`/`android-test`
+  jobs are the first real test of it.
+- **Issue reports**: `Body::Issue` (ADR 0023) is fully wired — `Contribution::Issue`,
+  the composer's Report button, and the Feedback screen's Issues list all work
+  end-to-end.
+- **Key backup**: export/import work as PEM text (copy/paste) and as a QR
+  code (`export_identity_qr`, scanned back in via the same barcode-scanner
+  plugin). A persistent nudge (`should_nudge_key_backup`) appears on Home
+  once 3+ things are published without an export, and clears on export;
+  importing a different key re-arms it.
 - The Feedback screen aggregates the **read view** (every annotation). The
   protocol's edit-supersession collapses per `(issuer, target)` in the
   `/sync` latest-edits view (`AppCore::get_feedback_latest`); merging both

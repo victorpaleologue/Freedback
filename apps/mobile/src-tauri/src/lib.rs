@@ -110,8 +110,27 @@ fn import_identity(core: tauri::State<'_, Core>, pem: String) -> Result<String, 
 }
 
 #[tauri::command]
+fn export_identity_qr(core: tauri::State<'_, Core>) -> Result<String, String> {
+    core.export_identity_qr().map_err(ui_err)
+}
+
+#[tauri::command]
 fn get_settings(core: tauri::State<'_, Core>) -> Result<Settings, String> {
     Ok(core.settings())
+}
+
+#[tauri::command]
+fn should_nudge_key_backup(core: tauri::State<'_, Core>) -> Result<bool, String> {
+    core.should_nudge_key_backup().map_err(ui_err)
+}
+
+/// Whether camera scanning is available: `tauri-plugin-barcode-scanner` is
+/// mobile-only (its crate root is `#![cfg(mobile)]`), so the desktop build —
+/// the primary e2e tier — never has it. The UI keeps the Scan button
+/// disabled unless this is true.
+#[tauri::command]
+fn scanning_supported() -> bool {
+    cfg!(mobile)
 }
 
 #[tauri::command]
@@ -140,8 +159,11 @@ fn handle_deep_link(app: &tauri::AppHandle, url: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_deep_link::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_deep_link::init());
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+
+    builder
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let core: Core = Arc::new(AppCore::open(data_dir)?);
@@ -166,8 +188,11 @@ pub fn run() {
             erase_entry,
             export_identity,
             import_identity,
+            export_identity_qr,
             get_settings,
             set_settings,
+            should_nudge_key_backup,
+            scanning_supported,
             take_pending_share,
         ])
         .run(tauri::generate_context!())

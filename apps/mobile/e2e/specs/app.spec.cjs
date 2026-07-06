@@ -49,6 +49,11 @@ describe("first run", () => {
     await expect($("#journal-empty")).toBeDisplayed();
   });
 
+  it("keeps Scan disabled on desktop (tauri-plugin-barcode-scanner is mobile-only)", async () => {
+    await goHome();
+    await expect($("#scan-btn")).not.toBeEnabled();
+  });
+
   it("mints the account key on first export (the key IS the account)", async () => {
     await goHome();
     await $("#nav-key").click();
@@ -58,6 +63,15 @@ describe("first run", () => {
       (await $("#key-export").getValue()).includes("BEGIN PRIVATE KEY")
     );
     exportedPem = await $("#key-export").getValue();
+  });
+
+  it("also shows the key as a scannable QR code", async () => {
+    await expect($("#key-qr")).toBeDisplayed();
+    await expect($("#key-qr svg")).toBeExisting();
+  });
+
+  it("keeps Scan QR disabled on desktop (same mobile-only plugin)", async () => {
+    await expect($("#key-scan-btn")).not.toBeEnabled();
   });
 });
 
@@ -154,23 +168,25 @@ describe("contributing feedback", () => {
     await browser.waitUntil(async () => (await $("#fb-thumbs-up").getText()) === "👍 1");
   });
 
-  // TODO(issue-type): the Issue composer stays disabled until Body::Issue
-  // lands in freedback-protocol (branch claude/issue-type).
-  it("keeps the issue composer visibly parked", async () => {
-    await expect($("#c-issue-send")).toBeExisting();
-    await expect($("#c-issue-send")).not.toBeEnabled();
+  it("publishes an issue report and it appears in its own list", async () => {
+    await $("#c-issue").setValue("packaging arrived crushed");
+    await $("#c-issue-send").click();
+    await publishOk();
+    await browser.waitUntil(async () =>
+      (await $("#fb-issues").getText()).includes("packaging arrived crushed")
+    );
   });
 });
 
 describe("my feedback (the local journal)", () => {
   it("lists every publish, newest first, all live", async () => {
     await openJournal();
-    await expect($$("#journal-list li")).toBeElementsArrayOfSize(4);
-    // Newest first: thumb, tag, comment, stars.
+    await expect($$("#journal-list li")).toBeElementsArrayOfSize(5);
+    // Newest first: issue, thumb, tag, comment, stars.
     const kinds = await $$("#journal-list li").map((r) => r.getAttribute("data-kind"));
-    expect(kinds).toEqual(["thumb", "tag", "comment", "stars"]);
+    expect(kinds).toEqual(["issue", "thumb", "tag", "comment", "stars"]);
     const statuses = await $$("#journal-list li .journal-status").map((s) => s.getText());
-    expect(statuses).toEqual(["live", "live", "live", "live"]);
+    expect(statuses).toEqual(["live", "live", "live", "live", "live"]);
   });
 
   it("updates an entry by supersession (same key + target, newest wins)", async () => {
@@ -184,7 +200,7 @@ describe("my feedback (the local journal)", () => {
 
     // The journal re-renders: a new live stars row + the superseded original.
     await browser.waitUntil(
-      async () => (await $$("#journal-list li").getElements()).length === 5
+      async () => (await $$("#journal-list li").getElements()).length === 6
     );
     const statuses = await $$('#journal-list li[data-kind="stars"] .journal-status').map(
       (s) => s.getText()
@@ -253,6 +269,26 @@ describe("my key", () => {
       throw new Error(`import failed: ${await $("#key-error").getText()}`);
     }
     await expect($("#key-ok")).toHaveText(expect.stringContaining("Imported"));
+  });
+});
+
+describe("key backup nudge", () => {
+  it("arms once the key needs backing up again (already 3+ posts on the journal)", async () => {
+    // "my key" just re-imported the exported PEM, which re-arms the nudge —
+    // the journal already has several posts from earlier blocks.
+    await goHome();
+    await $("#backup-nudge").waitForDisplayed();
+  });
+
+  it("clears once the key is exported again", async () => {
+    await $("#nav-key").click();
+    await waitView("key");
+    await $("#key-export-btn").click();
+    await browser.waitUntil(async () =>
+      (await $("#key-export").getValue()).includes("BEGIN PRIVATE KEY")
+    );
+    await goHome();
+    await expect($("#backup-nudge")).not.toBeDisplayed();
   });
 });
 

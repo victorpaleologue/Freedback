@@ -16,6 +16,7 @@ const TARGET: &str = "https://id.gs1.org/01/03017620422003";
 const T1: &str = "2026-07-01T10:00:00Z";
 const T2: &str = "2026-07-02T10:00:00Z";
 const T3: &str = "2026-07-03T10:00:00Z";
+const T4: &str = "2026-07-04T10:00:00Z";
 
 async fn spawn_server() -> String {
     let store = Arc::new(MemoryStore::new());
@@ -149,7 +150,7 @@ async fn publish_stars_lands_in_journal_and_on_server() {
 }
 
 #[tokio::test]
-async fn publish_comment_tag_and_thumb() {
+async fn publish_comment_tag_thumb_and_issue() {
     let server = spawn_server().await;
     let dir = tempfile::tempdir().unwrap();
     let core = core_at(dir.path(), &server);
@@ -177,8 +178,16 @@ async fn publish_comment_tag_and_thumb() {
     core.publish_at(TARGET, Contribution::Thumb { up: true }, None, T3)
         .await
         .unwrap();
-    // TODO(issue-type): publish an issue once Body::Issue lands in
-    // freedback-protocol (branch claude/issue-type).
+    core.publish_at(
+        TARGET,
+        Contribution::Issue {
+            text: "lid doesn't reseal".into(),
+        },
+        None,
+        T4,
+    )
+    .await
+    .unwrap();
 
     let view = core.get_feedback(TARGET).await.unwrap();
     assert_eq!(view.comments.len(), 1);
@@ -186,7 +195,9 @@ async fn publish_comment_tag_and_thumb() {
     assert_eq!(view.tags.len(), 1);
     assert_eq!(view.tags[0].text, "breakfast");
     assert_eq!(view.thumbs_up, 1);
-    assert_eq!(view.total, 3);
+    assert_eq!(view.issues.len(), 1);
+    assert_eq!(view.issues[0].text, "lid doesn't reseal");
+    assert_eq!(view.total, 4);
 
     let kinds: Vec<_> = core
         .my_feedback()
@@ -195,7 +206,75 @@ async fn publish_comment_tag_and_thumb() {
         .map(|e| e.kind)
         .collect();
     // Newest first.
-    assert_eq!(kinds, vec!["thumb", "tag", "comment"]);
+    assert_eq!(kinds, vec!["issue", "thumb", "tag", "comment"]);
+}
+
+#[tokio::test]
+async fn backup_nudge_arms_after_a_few_posts_and_clears_on_export() {
+    let server = spawn_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let core = core_at(dir.path(), &server);
+
+    assert!(
+        !core.should_nudge_key_backup().unwrap(),
+        "nothing published yet"
+    );
+
+    core.publish_at(TARGET, Contribution::Tag { text: "a".into() }, None, T1)
+        .await
+        .unwrap();
+    core.publish_at(TARGET, Contribution::Tag { text: "b".into() }, None, T2)
+        .await
+        .unwrap();
+    assert!(
+        !core.should_nudge_key_backup().unwrap(),
+        "below the threshold"
+    );
+
+    core.publish_at(TARGET, Contribution::Tag { text: "c".into() }, None, T3)
+        .await
+        .unwrap();
+    assert!(
+        core.should_nudge_key_backup().unwrap(),
+        "at the threshold, key never exported"
+    );
+
+    core.export_identity().unwrap();
+    assert!(
+        !core.should_nudge_key_backup().unwrap(),
+        "exporting the key backs it up"
+    );
+}
+
+#[tokio::test]
+async fn importing_a_key_re_arms_the_backup_nudge() {
+    let server = spawn_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let core = core_at(dir.path(), &server);
+
+    for i in 0..3 {
+        core.publish_at(
+            TARGET,
+            Contribution::Tag {
+                text: format!("t{i}"),
+            },
+            None,
+            T1,
+        )
+        .await
+        .unwrap();
+    }
+    let pem = core.export_identity().unwrap();
+    assert!(
+        !core.should_nudge_key_backup().unwrap(),
+        "backed up, even with 3+ posts already on the journal"
+    );
+
+    // Re-importing (e.g. restoring onto a fresh install) hasn't been backed
+    // up FROM THIS DEVICE yet — even though the journal already clears the
+    // post threshold, the nudge should re-arm immediately.
+    core.import_identity(&pem).unwrap();
+    assert!(core.should_nudge_key_backup().unwrap());
 }
 
 #[tokio::test]

@@ -82,9 +82,7 @@ pub struct JournalEntry {
     pub server: String,
     /// The annotation's `created` timestamp (RFC 3339 UTC).
     pub created: String,
-    /// Contribution kind: `stars` / `thumb` / `comment` / `tag`.
-    // TODO(issue-type): add `issue` once `Body::Issue` (branch
-    // claude/issue-type) lands in freedback-protocol.
+    /// Contribution kind: `stars` / `thumb` / `comment` / `tag` / `issue`.
     pub kind: String,
     /// A short human summary ("★ 4", first words of a comment, ...).
     pub summary: String,

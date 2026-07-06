@@ -85,6 +85,19 @@ a { color: var(--fb-accent); }
 .error { color: var(--fb-danger); font-size: 0.9rem; }
 .ok { color: var(--fb-ok); font-size: 0.9rem; }
 
+#backup-nudge { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+#backup-nudge span { flex: 1; }
+
+.qr {
+  margin: 0.8rem auto 0;
+  max-width: 220px;
+  background: #fff;
+  border: 1px solid var(--fb-line);
+  border-radius: var(--fb-radius);
+  padding: 0.6rem;
+}
+.qr svg { display: block; width: 100%; height: auto; }
+
 .row { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
 .row label { min-width: 3.5rem; color: var(--fb-muted); font-size: 0.9rem; }
 
