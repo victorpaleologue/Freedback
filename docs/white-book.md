@@ -1,8 +1,8 @@
 # The Freedback White Book
 
 *The vision this project has carried since 2014 — the introductory document
-of this wiki. Everything else in [`docs/`](README.md) is the how; this is the
-why.*
+of [the design docs](README.md). Everything else in `docs/` is the how; this
+is the why.*
 
 ## The vision
 
@@ -74,7 +74,7 @@ Concretely, today:
 Freedback is free as in freedom: MIT-licensed, non-contaminating, usable
 anywhere. For exactly what's built and how the pieces fit together, see the
 [architecture overview](architecture.md); for the how of running or using any
-of it, start from the [wiki index](README.md).
+of it, start from the [docs index](README.md).
 
 ## Principles
 

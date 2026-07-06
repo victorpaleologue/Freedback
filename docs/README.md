@@ -1,7 +1,9 @@
-# Freedback wiki
+# Freedback docs
 
-Design docs for the project, in one place. Start with the white book if you
-want the *why*; everything else here is the *how*.
+Design docs for the project, in one place (not GitHub's separate Wiki
+feature — this directory, versioned and reviewed like the rest of the code).
+Start with the white book if you want the *why*; everything else here is the
+*how*.
 
 ## Start here
 

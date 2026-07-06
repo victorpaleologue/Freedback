@@ -14,8 +14,9 @@ without a central gatekeeper. The wire format is a standard Web Annotation
 (JSON-LD), so existing annotation tooling can already read it, and your
 feedback stays yours: sign it with your own key, edit it, or delete it — real
 deletion, not a flag — no matter who's hosting it. See it live at
-[freedback.net](https://freedback.net/), or read the full vision in
-**[the White Book](docs/white-book.md)**.
+[freedback.net](https://freedback.net/), read the full vision in
+**[the White Book](docs/white-book.md)**, or browse the rest of
+**[the design docs](docs/README.md)**.
 
 ## Quick start
 
@@ -23,7 +24,10 @@ deletion, not a flag — no matter who's hosting it. See it live at
 
 Drop-in, framework-agnostic Web Components — a side-effect import registers
 six custom elements (`<freedback-stars>`, `<freedback-comment>`, …), config is
-all `data-*`, so React (and everything else) just renders them:
+all `data-*`, so React (and everything else) just renders them. The example
+below reads from and publishes to our live demo server — swap `data-read`
+and `data-publish` for your own once you have one (see
+[Run your own server](#run-your-own-server)):
 
 ```sh
 npm add @freedback/widgets
@@ -35,8 +39,8 @@ npm add @freedback/widgets
 </script>
 <freedback-stars
   data-target="https://shop.example/product/42"
-  data-read="https://collect.example/index"
-  data-publish="https://feedback.example/annotations/"
+  data-read="https://freedback-demo.fly.dev/annotations/"
+  data-publish="https://freedback-demo.fly.dev/annotations/"
   data-sign
 ></freedback-stars>
 ```
@@ -44,6 +48,29 @@ npm add @freedback/widgets
 No build step? The same script works from a plain `<script src="…">` tag too.
 Full walkthrough (React, outcome events, a reusable wrapper) in
 [`docs/widgets-react.md`](docs/widgets-react.md).
+
+### Collect and query the data
+
+The wire format is plain HTTP + JSON-LD, so reading feedback needs nothing
+Freedback-specific — these all hit our live demo server; swap the host for
+your own once you have one (see [below](#run-your-own-server)):
+
+```sh
+curl 'https://freedback-demo.fly.dev/annotations/?target=https://freedback.net/' | jq
+```
+
+Existing W3C Web Annotation tools read it with zero Freedback-specific code
+too — [Annotorious](https://annotorious.dev/) or
+[RecogitoJS](https://recogito.github.io/recogitojs/) can consume a collection
+page as-is (see [`demo-third-party/`](demo-third-party/) for a working
+example).
+
+Or the bundled CLI (`cargo run -p freedback-cli-client --`, binary name
+`freedback`):
+
+```sh
+cargo run -p freedback-cli-client -- read --server https://freedback-demo.fly.dev --target https://freedback.net/
+```
 
 ### Run your own server
 
@@ -66,6 +93,13 @@ docker build -t freedback .
 docker run -p 8080:8080 -e FREEDBACK_BASE_URL=https://feedback.example.org \
   freedback freedback-feedback-server
 ```
+
+Once it's running, every example above works exactly the same way against
+it — just swap `https://freedback-demo.fly.dev` for your server's own base
+URL: `data-read`/`data-publish` on the widgets, the URL in `curl`/browser
+requests, and `--server` on the CLI. Nothing else changes; the target, the
+signing, and the wire format are unaffected by which server you publish to
+or read from.
 
 There's no prebuilt public image yet — both commands above build locally
 (tracked as [#73](https://github.com/victorpaleologue/Freedback/issues/73)).
@@ -146,7 +180,7 @@ for the full crate map.
 
 ## Documentation
 
-Full docs live in [`docs/`](docs/README.md), the project wiki — start with
+Full docs live in [`docs/`](docs/README.md) — start with
 [the White Book](docs/white-book.md) for the vision, or
 [the architecture overview](docs/architecture.md) for how the pieces above
 fit together.
