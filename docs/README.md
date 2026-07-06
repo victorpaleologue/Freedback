@@ -1,9 +1,13 @@
-# Freedback docs
+# The Freedback docs
 
-Design docs for the project, in one place (not GitHub's separate Wiki
-feature — this directory, versioned and reviewed like the rest of the code).
-Start with the white book if you want the *why*; everything else here is the
-*how*.
+So you want the details. Good — this is where Freedback is explained in full:
+the vision it has carried since 2014, how the pieces actually fit together,
+how to run and build on it, and the reasoning behind every non-obvious call.
+Nothing here is a stub. Take the tour.
+
+Not sure where to start? Read [the White Book](white-book.md) for the *why*,
+then [the architecture](architecture.md) for the *how* — the rest you can
+dip into as you need it.
 
 ## Start here
 
@@ -18,13 +22,14 @@ Start with the white book if you want the *why*; everything else here is the
   package, JSX usage, outcome events, a reusable wrapper.
 - **[Deployment](deployment.md)** — `docker compose up`, a single container,
   environment variables, storage backends.
-- **[Hosting a public demo](hosting.md)** — Fly.io (recommended) and a
-  Hugging Face Docker Space alternative.
+- **[Hosting the servers](hosting.md)** — Fly.io (recommended, with the
+  persistent default server) and a Hugging Face Docker Space alternative.
 
 ## Design decisions
 
 - **[Architecture decision records](adr/)** — the non-obvious calls, written
-  up as they were made. [`architecture.md`](architecture.md#why-these-choices)
+  up as they were made: the context, the decision, the alternatives weighed,
+  the consequences. [`architecture.md`](architecture.md#why-these-choices)
   keeps the running index.
 - **[Naming & namespace findings](naming.md)** — why the npm package is
   `@freedback/widgets` and the canonical domain is `freedback.net`.
