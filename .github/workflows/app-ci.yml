@@ -254,7 +254,32 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: apps/mobile/src-tauri/gen/android
-          script: ./gradlew connectedX86_64DebugAndroidTest --stacktrace
+          # -x rustBuildX86_64Debug: this is a DIFFERENT failure than the
+          # "Pre-build" step's retry loop guards against, despite the
+          # identical panic text. tauri's generated Gradle `rust` plugin
+          # task (buildSrc RustPlugin.kt / BuildTask.kt) declares @Input
+          # but no @OutputFile/@OutputDirectory, so Gradle can never mark
+          # it UP-TO-DATE — it re-executes on every invocation that reaches
+          # it, including this raw `./gradlew` one. When it runs, it shells
+          # out to `tauri android android-studio-script`, which (tauri-cli
+          # mobile/mod.rs `read_options`, ~line 403) connects back over a
+          # local WebSocket to fetch CLI options from a LIVE parent `tauri
+          # android ...` process (`write_options`). The "Pre-build" step
+          # above IS such a parent while it runs, but it's a one-shot build
+          # that has already exited by the time this step's plain
+          # `./gradlew` invocation starts — so there is no parent left to
+          # answer, and the task deterministically panics with "failed to
+          # read CLI options ... Connection refused". Confirmed locally:
+          # reproduced this exact panic by running `tauri android build
+          # --debug --apk --target x86_64` followed by a bare
+          # `./gradlew connectedX86_64DebugAndroidTest`, then confirmed
+          # that adding `-x rustBuildX86_64Debug` clears the panic and the
+          # build proceeds using the .so the Pre-build step already placed
+          # in app/src/main/jniLibs/x86_64 on this same checkout. Retrying
+          # would not help here — the parent process is gone, not merely
+          # slow to start — so skip the redundant task instead of retrying
+          # it.
+          script: ./gradlew connectedX86_64DebugAndroidTest --stacktrace -x rustBuildX86_64Debug
       - name: Upload connected-test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
