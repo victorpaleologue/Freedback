@@ -286,6 +286,19 @@ footer {
   font-size: 0.85rem;
 }
 
+/* A discreet author fingerprint next to a piece of feedback — a "same
+ * author?" glance, and (with `data-author-href`) a link to a view of that
+ * identity used as an ordinary feedback target (an author's own IRI). */
+.fb-fp {
+  color: var(--fb-muted);
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-decoration: none;
+  opacity: 0.75;
+}
+a.fb-fp:hover,
+a.fb-fp:focus-visible { opacity: 1; text-decoration: underline; }
+
 /* "Delete my feedback" (right to erasure, ADR 0021): a small × the widgets
  * render on the visitor's OWN items (and as post-publish undo on ratings). */
 .fb-del {

@@ -41,6 +41,15 @@ export interface FreedbackDataAttributes {
   "data-best"?: string | number;
   /** `<freedback-scalar>` scale: step (default 0.1). */
   "data-step"?: string | number;
+  /**
+   * `<freedback-comment>` / `<freedback-issue>` only: a base URL for a view
+   * of an item's author, used AS A FEEDBACK TARGET (an author's identity is
+   * an IRI too — at minimum their public key). When set, each item's short
+   * fingerprint badge becomes a link to `${base}?id=<creator.id>&read=...
+   * &publish=...`; without it the badge is inert text. No server support is
+   * needed either way — an author's IRI is just an ordinary target.
+   */
+  "data-author-href"?: string;
 }
 
 // --- outcome events (CustomEvent detail shapes) -------------------------------
@@ -238,6 +247,13 @@ export function buildSignedDelete(
   created?: string
 ): Promise<DeleteDocument>;
 export function dedupFromId(id: string | null | undefined): string | null;
+/**
+ * A short, deterministic, non-cryptographic hash of an issuer id (a 32-bit
+ * FNV-1a over the id string, as 8 lowercase hex chars) — a "same author?"
+ * glance, NOT the key's real fingerprint. Works uniformly for self-signed
+ * (`urn:freedback:key:…`) and OAuth (`urn:freedback:oauth:…`) issuer ids.
+ */
+export function fingerprint(id: string | null | undefined): string;
 export function getIdentity(): Promise<FreedbackIdentity>;
 export function generateKeyRecord(subtle: SubtleCrypto): Promise<FreedbackKeyRecord>;
 export function identityFromRecord(
@@ -285,6 +301,7 @@ declare const _default: {
   deleteDocument: typeof deleteDocument;
   buildSignedDelete: typeof buildSignedDelete;
   dedupFromId: typeof dedupFromId;
+  fingerprint: typeof fingerprint;
   getIdentity: typeof getIdentity;
   generateKeyRecord: typeof generateKeyRecord;
   identityFromRecord: typeof identityFromRecord;

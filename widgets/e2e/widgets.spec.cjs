@@ -85,6 +85,23 @@ test("e2e harness: self-signed publish + read back for all widget kinds", async 
   await expect(page.locator("#comment .fb-list li")).toHaveCount(1, { timeout: 15000 });
   await expect(page.locator("#comment .fb-list li")).toContainText("great work", { timeout: 15000 });
 
+  // author fingerprint badge (issue: an author deserves an identity IRI too —
+  // at minimum their public key). `data-author-href="/author/"` is set on
+  // the harness's #comment element (e2e.html), so each item's badge is a
+  // link built entirely client-side from the annotation's own creator.id —
+  // no new server endpoint, since an author's IRI is just another target.
+  const fp = page.locator("#comment .fb-list li a.fb-fp");
+  await expect(fp).toBeVisible({ timeout: 15000 });
+  await expect(fp).toHaveText(/^#[0-9a-f]{8}$/);
+  const fpTitle = await fp.getAttribute("title");
+  expect(fpTitle).toMatch(/^urn:freedback:key:[0-9a-f]{64}$/); // full issuer id, as a tooltip
+  const fpHref = await fp.getAttribute("href");
+  const fpUrl = new URL(fpHref, STATIC);
+  expect(fpUrl.pathname).toBe("/author/");
+  expect(fpUrl.searchParams.get("id")).toBe(fpTitle); // the author's own IRI, as the target
+  expect(fpUrl.searchParams.get("read")).toBe(READ);
+  expect(fpUrl.searchParams.get("publish")).toBe(FEEDBACK);
+
   // issue (ADR 0023): report a problem through the textarea; the signed
   // annotation (oa:TextualBody + the standard oa:editing motivation) is
   // accepted by the REAL feedback server and read back into the list.
@@ -95,6 +112,8 @@ test("e2e harness: self-signed publish + read back for all widget kinds", async 
   await expect(page.locator("#issue .fb-list li")).toHaveClass(/fb-issue-item/);
   // Being the visitor's OWN report, it carries the delete affordance too.
   await expect(page.locator("#issue .fb-list li .fb-del")).toBeVisible({ timeout: 15000 });
+  // The issue widget gets the same author-fingerprint badge as comments.
+  await expect(page.locator("#issue .fb-list li a.fb-fp")).toBeVisible({ timeout: 15000 });
 
   // tag (own chip also carries the `×` delete control)
   await page.locator("#tag .fb-in").fill("rust");
@@ -216,10 +235,15 @@ test("e2e harness: data-token (OAuth bearer) publish + read back", async ({ page
   await expect(page.locator("#stars .fb-agg")).toContainText("3.0", { timeout: 15000 });
   await expect(page.locator("#stars .fb-agg")).toContainText("(1)", { timeout: 15000 });
 
-  // A comment over the bearer path too.
+  // A comment over the bearer path too. The li also carries the author
+  // fingerprint badge (data-author-href is set on the harness's #comment
+  // element regardless of auth mode — see e2e.html), so match on containment.
+  // An OAuth-stamped creator.id fingerprints the same way as a self-signed
+  // one, no format-specific parsing needed.
   await page.locator("#comment .fb-in").fill("via bearer");
   await page.locator("#comment form button").click();
-  await expect(page.locator("#comment .fb-list li")).toHaveText(["via bearer"], { timeout: 15000 });
+  await expect(page.locator("#comment .fb-list li")).toContainText("via bearer", { timeout: 15000 });
+  await expect(page.locator("#comment .fb-list li a.fb-fp")).toBeVisible({ timeout: 15000 });
 });
 
 // 4) Negative control: with neither data-sign nor data-token, a publish is

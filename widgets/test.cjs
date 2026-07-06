@@ -123,6 +123,7 @@ const {
   deleteDocument,
   buildSignedDelete,
   dedupFromId,
+  fingerprint,
   generateKeyRecord,
   identityFromRecord,
   wrapIdentity,
@@ -275,6 +276,27 @@ assert.strictEqual(dedupFromId(`http://h/annotations/${DEL_DEDUP}?x=1#frag`), DE
 assert.strictEqual(dedupFromId("urn:freedback:mock:7"), "urn:freedback:mock:7");
 assert.strictEqual(dedupFromId(null), null);
 assert.strictEqual(dedupFromId(""), null);
+
+// fingerprint: a short, deterministic, non-cryptographic "same author?" hash
+// of an issuer id — works uniformly across self-signed and OAuth id shapes.
+assert.strictEqual(fingerprint(""), "");
+assert.strictEqual(fingerprint(null), "");
+assert.match(fingerprint("urn:freedback:key:abc"), /^[0-9a-f]{8}$/, "8 lowercase hex chars");
+assert.strictEqual(
+  fingerprint("urn:freedback:key:abc"),
+  fingerprint("urn:freedback:key:abc"),
+  "deterministic for the same id"
+);
+assert.notStrictEqual(
+  fingerprint("urn:freedback:key:abc"),
+  fingerprint("urn:freedback:key:abd"),
+  "different ids should (almost always) fingerprint differently"
+);
+assert.match(
+  fingerprint("urn:freedback:oauth:app:user"),
+  /^[0-9a-f]{8}$/,
+  "OAuth-shaped ids fingerprint the same way, no format-specific parsing"
+);
 
 // Body builders match the canonical wire shape.
 assert.deepStrictEqual(Object.keys(starBody(4)).sort(), [
