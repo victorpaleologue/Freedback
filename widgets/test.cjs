@@ -164,9 +164,14 @@ const issueAnn = baseAnnotation("editing", "https://ex/1", textBody("broken link
 assert.strictEqual(issueAnn.motivation, "editing");
 assert.strictEqual(issueAnn.body[0].purpose, "editing");
 
-// readUrl appends the encoded target.
-assert.strictEqual(readUrl("http://h/index", "https://ex/1"), "http://h/index?target=https%3A%2F%2Fex%2F1");
-assert.strictEqual(readUrl("http://h/index?x=1", "a"), "http://h/index?x=1&target=a");
+// readUrl appends the encoded target and an unbounded page_size: a target
+// past the server's default page size (oldest-first) would otherwise lose
+// its newest — and thus the viewer's own — items from the widget's own read.
+assert.strictEqual(
+  readUrl("http://h/index", "https://ex/1"),
+  "http://h/index?target=https%3A%2F%2Fex%2F1&page_size=0"
+);
+assert.strictEqual(readUrl("http://h/index?x=1", "a"), "http://h/index?x=1&target=a&page_size=0");
 
 // --- RFC 8785 JCS cross-language conformance ------------------------------
 // This exact string is the output of Rust's `serde_json_canonicalizer` over the

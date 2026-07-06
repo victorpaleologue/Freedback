@@ -251,6 +251,31 @@ async fn tombstones_evict_deleted_annotations() {
     );
 }
 
+/// A target with more annotations than the upstream's default page size (50,
+/// oldest-first) must still be fully aggregated: the collection server has to
+/// ask upstream for the unbounded collection, not just its first page.
+#[tokio::test]
+async fn target_past_default_page_size_is_fully_aggregated() {
+    let seed: Vec<Annotation> = (0..60).map(|i| signed(A, (i % 5 + 1) as f64)).collect();
+    let fb_a = spawn_feedback(&seed).await;
+    let (col, state) = spawn_collection(RateLimit::default()).await;
+    state.add_server(&fb_a);
+    let http = reqwest::Client::new();
+
+    let idx: Value = http
+        .get(format!("{col}/index?target={A}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        idx["total"], 60,
+        "the aggregate must not be capped at the upstream's default page size"
+    );
+}
+
 #[tokio::test]
 async fn rate_limiter_caps_upstream_bursts() {
     // max-age=0 so every query must revalidate (and thus spend a token) — this

@@ -472,7 +472,13 @@ impl AppState {
         // revalidation — the staleness bound politeness already grants.
         self.refresh_tombstones(server).await;
 
-        let url = format!("{server}/annotations/?target={}", urlencode(uri));
+        // `page_size=0` asks the upstream for its whole (unbounded) collection:
+        // without it, any target past the upstream's default page size (oldest
+        // items first) would silently lose its newest items from the aggregate.
+        let url = format!(
+            "{server}/annotations/?target={}&page_size=0",
+            urlencode(uri)
+        );
         let mut req = self.http.get(&url);
         // Send both validators we hold so the upstream can answer 304 by ETag or
         // by modification date.

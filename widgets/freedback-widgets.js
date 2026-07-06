@@ -35,15 +35,31 @@
   const ANNO_CTX = ["http://www.w3.org/ns/anno.jsonld", "https://freedback.net/ns/context.jsonld"];
   const PROFILE = "https://freedback.net/profile/1";
 
-  /** Build the read URL with a target query param. */
+  /** Build the read URL with a target query param.
+   *
+   * `page_size=0` asks the server for the whole (unbounded) collection rather
+   * than its default first page: a widget renders one target's full history,
+   * so a target past the server's default page size (e.g. a popular target
+   * with 50+ prior items, oldest-first) would otherwise never see its own
+   * most recent — and thus the viewer's own — items, breaking both the
+   * aggregate and the own-item delete affordance (`isOwn()` can only match
+   * annotations actually present in `this.annotations`).
+   */
   function readUrl(base, target) {
     const sep = base.includes("?") ? "&" : "?";
-    return `${base}${sep}target=${encodeURIComponent(target)}`;
+    return `${base}${sep}target=${encodeURIComponent(target)}&page_size=0`;
   }
 
   /** Pull annotations from a `data-read` endpoint (AnnotationPage or array). */
   async function fetchAnnotations(base, target) {
-    const resp = await fetch(readUrl(base, target), { headers: { accept: "application/ld+json" } });
+    // `cache: "no-store"` bypasses the browser HTTP cache: the collection
+    // response carries `Cache-Control: max-age=...`, and a `refresh()` right
+    // after `publish()`/`erase()` reuses the identical read URL, so a
+    // caching fetch would silently replay the pre-publish snapshot.
+    const resp = await fetch(readUrl(base, target), {
+      headers: { accept: "application/ld+json" },
+      cache: "no-store",
+    });
     if (!resp.ok) throw new Error(`read failed: ${resp.status}`);
     const doc = await resp.json();
     if (Array.isArray(doc)) return doc;
