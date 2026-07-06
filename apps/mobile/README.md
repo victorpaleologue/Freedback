@@ -65,7 +65,10 @@ path via the plugin config in `tauri.conf.json`.
 
 CI: `.github/workflows/app-ci.yml` (jobs `core`, `shell`, `desktop-e2e`,
 `android-build`, `android-test`); releases: `mobile-release.yml` (tag
-`mobile-v*`, signing guarded on `ANDROID_*` secrets).
+`mobile-v*`, signing guarded on `ANDROID_*` secrets). Since `app-ci.yml`
+doesn't itself trigger on tag pushes, `mobile-release.yml` gates its Release
+publish step on `app-ci.yml`'s latest run for the tagged commit having
+succeeded — cut tags from a `main` commit that's already green.
 
 ## Dev setup
 

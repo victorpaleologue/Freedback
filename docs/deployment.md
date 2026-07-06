@@ -99,6 +99,13 @@ It attaches to the GitHub Release for the tag:
 Each archive ships a `.sha256`. `workflow_dispatch` builds the artifacts without
 publishing a Release (smoke test).
 
+**Gated on CI:** `ci.yml` only triggers on pushes/PRs to `main`, not on tag
+pushes, so a `verify-ci` job checks that `ci.yml`'s most recent run for the
+exact tagged commit succeeded before the `publish`/`publish-npm-widgets` jobs
+run — a tag cut from a commit that never ran CI (or ran it red) fails the
+release instead of publishing anyway. Cut tags from a `main` commit that has
+already gone green.
+
 ### Publishing `@freedback/widgets` to npm (guarded)
 
 The same `release.yml` has a **`publish-npm-widgets`** job that, on a `vN` tag,
@@ -177,4 +184,7 @@ These steps are **outside the repo** and must be done by the domain owner:
 - `pages.yml` — publishes the static artifacts from `main`.
 - `release.yml` — on a `v*` tag, publishes the musl binaries + wasm package to
   the GitHub Release, and (guarded on `NPM_TOKEN`) publishes `@freedback/widgets`
-  to npm.
+  to npm. Publishing is gated on `ci.yml` having succeeded for the tagged commit.
+- `app-ci.yml` / `mobile-release.yml` — the mobile app's own CI and release
+  pipeline (`apps/mobile/README.md`); `mobile-release.yml`'s Release publish is
+  likewise gated on `app-ci.yml` having succeeded for the tagged commit.
