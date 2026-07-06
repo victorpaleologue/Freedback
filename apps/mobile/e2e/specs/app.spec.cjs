@@ -268,3 +268,45 @@ describe("settings", () => {
     await $("#settings-ok").waitForDisplayed();
   });
 });
+
+describe("author view (fingerprint badge on a comment)", () => {
+  before(async () => {
+    // Self-contained: publish a fresh comment rather than relying on state
+    // from earlier blocks, some of which erase their own comments.
+    await lookUp("3017620422003");
+    await waitView("feedback");
+    await $("#c-comment").setValue("solid choice");
+    await $("#c-comment-send").click();
+    await publishOk();
+    await browser.waitUntil(async () =>
+      (await $("#fb-comments").getText()).includes("solid choice")
+    );
+  });
+
+  it("shows a tappable fingerprint badge next to the comment", async () => {
+    const badge = await $("#fb-comments .fb-fp");
+    await expect(badge).toBeDisplayed();
+    await expect(badge).toHaveText(expect.stringMatching(/^#[0-9a-f]{8}$/));
+  });
+
+  it("opens the author's own feedback screen (their identity IRI as target)", async () => {
+    const badge = await $("#fb-comments .fb-fp");
+    const issuerId = await badge.getAttribute("title");
+    await badge.click();
+    await waitView("author");
+    await expect($("#author-id")).toHaveText(issuerId);
+  });
+
+  it("lets you leave a note on the author, then Back returns to the product", async () => {
+    await $("#a-comment").setValue("thanks for the tip!");
+    await $("#a-comment-send").click();
+    await $("#author-ok").waitForDisplayed();
+    await browser.waitUntil(async () =>
+      (await $("#author-comments").getText()).includes("thanks for the tip!")
+    );
+
+    await $("#nav-back").click();
+    await waitView("feedback");
+    await expect($("#fb-target")).toHaveText(GS1_NUTELLA);
+  });
+});
