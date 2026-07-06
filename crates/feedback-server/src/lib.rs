@@ -117,6 +117,8 @@ impl AppState {
 pub fn build_app(state: AppState) -> Router {
     let cors_permissive = state.cors_permissive;
     let router = Router::new()
+        // A human-clickable index at the bare hostname (else: 404 on click).
+        .route("/", get(handlers::root))
         .route(
             "/annotations/",
             // GET (and HEAD, auto-derived by axum) reads the paged collection;

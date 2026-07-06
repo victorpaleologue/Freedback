@@ -25,7 +25,9 @@ permissions:
 
 env:
   SITE: https://freedback.net
+  # demo = ephemeral playground; default = the persistent real server.
   FEEDBACK: https://freedback-demo.fly.dev
+  FEEDBACK_DEFAULT: https://freedback-default.fly.dev
   DISCOVERY: https://freedback-discovery.fly.dev
   # Scale-to-zero apps cold-start on first contact — retry generously.
   CURL: curl --silent --show-error --fail --max-time 30 --retry 5 --retry-delay 3 --retry-all-errors
@@ -50,15 +52,24 @@ jobs:
       - name: Backend — wake up + erasure capability advertised
         run: |
           $CURL "$FEEDBACK/.well-known/freedback" | tee /tmp/wk.json | jq -e '.capabilities | index("erasure")' > /dev/null
-          echo "feedback server OK (erasure capable)"
+          echo "demo feedback server OK (erasure capable)"
+          # The default (persistent) server: same capabilities, PLUS the
+          # server-wide default data license (ADR 0022) it is configured with,
+          # and a clickable index at the bare hostname.
+          $CURL "$FEEDBACK_DEFAULT/.well-known/freedback" | tee /tmp/wkd.json | jq -e '.capabilities | index("erasure")' > /dev/null
+          jq -e '.license == "https://creativecommons.org/licenses/by/4.0/"' /tmp/wkd.json > /dev/null
+          $CURL "$FEEDBACK_DEFAULT/" | jq -e '.name == "freedback-feedback-server"' > /dev/null
+          echo "default feedback server OK (erasure capable, licensed, clickable root)"
 
-      - name: Discovery — announce the feedback server, listed in /servers
+      - name: Discovery — announce both feedback servers, listed in /servers
         run: |
-          $CURL -X POST "$DISCOVERY/announce" \
-            -H 'content-type: application/json' \
-            -d "{\"url\": \"$FEEDBACK\"}" | jq .
-          $CURL "$DISCOVERY/servers" | jq -e --arg s "$FEEDBACK" \
-            '.. | strings | select(startswith($s))' | head -1 | grep -q .
+          for srv in "$FEEDBACK" "$FEEDBACK_DEFAULT"; do
+            $CURL -X POST "$DISCOVERY/announce" \
+              -H 'content-type: application/json' \
+              -d "{\"url\": \"$srv\"}" | jq .
+            $CURL "$DISCOVERY/servers" | jq -e --arg s "$srv" \
+              '.. | strings | select(startswith($s))' | head -1 | grep -q .
+          done
           echo "discovery OK"
 
       - name: Install Rust (stable)
@@ -110,6 +121,10 @@ jobs:
           jq -e --arg s "$FEEDBACK" '.. | strings | select(startswith($s))' /tmp/resolve.json | head -1 | grep -q .
 
           # 4) Ownership check: a DIFFERENT key must NOT be able to erase it.
+          # Mint a real foreign key first — without this the delete fails on
+          # file-not-found, "passing" without ever testing the server's 403.
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out /tmp/wrong-key.pem
+          test -s /tmp/wrong-key.pem
           if $CLI delete --server "$FEEDBACK" --id "$DEDUP" --key-file /tmp/wrong-key.pem; then
             echo "ERROR: delete with a non-author key was accepted" >&2
             exit 1
@@ -130,3 +145,35 @@ jobs:
           $CURL "$FEEDBACK/tombstones?gt_deleted_at=0" \
             | jq -e --arg id "$DEDUP" '.[] | select(.dedup_id == $id)' > /dev/null
           echo "lifecycle OK — production left clean"
+
+      - name: Lifecycle (default server) — publish → read → erase → 410
+        # The persistent server gets the same self-cleaning round trip: the
+        # essential health check that writes actually land AND that erasure
+        # works there too (protocol edge cases are already covered above with
+        # the same binary/image — this asserts THE server, not the protocol).
+        run: |
+          set -euo pipefail
+          CLI=target/release/freedback
+          TARGET="https://freedback.net/smoke-default/${{ github.run_id }}"
+          KEY=/tmp/smoke-key-default.pem
+
+          $CLI write --server "$FEEDBACK_DEFAULT" --target "$TARGET" --key-file "$KEY" --stars 5 \
+            | tee /tmp/stored-default.json
+          DEDUP=$(basename "$(jq -r .id /tmp/stored-default.json)")
+          echo "published dedup_id=$DEDUP"
+
+          DELETED=0
+          cleanup() {
+            if [ "$DELETED" != 1 ]; then
+              echo "cleanup: erasing $DEDUP"
+              $CLI delete --server "$FEEDBACK_DEFAULT" --id "$DEDUP" --key-file "$KEY" || true
+            fi
+          }
+          trap cleanup EXIT
+
+          test "$($CLI read --server "$FEEDBACK_DEFAULT" --target "$TARGET" | jq 'length')" = "1"
+          $CLI delete --server "$FEEDBACK_DEFAULT" --id "$DEDUP" --key-file "$KEY"
+          DELETED=1
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$FEEDBACK_DEFAULT/annotations/$DEDUP")
+          test "$CODE" = "410"
+          echo "default-server lifecycle OK — left clean"

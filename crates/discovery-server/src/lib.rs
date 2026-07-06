@@ -255,6 +255,8 @@ impl AppState {
 /// Build the discovery-server router.
 pub fn build_app(state: AppState) -> Router {
     Router::new()
+        // A human-clickable index at the bare hostname (else: 404 on click).
+        .route("/", get(root))
         .route("/announce", post(announce))
         .route("/servers", get(servers))
         .route("/relays", post(post_relays).get(get_relays))
@@ -467,6 +469,18 @@ async fn server_has_target(http: &reqwest::Client, server: &str, target: &str) -
         .and_then(Value::as_u64)
         .map(|t| t > 0)
         .unwrap_or(false)
+}
+
+/// `GET /` — a tiny human-clickable index (else a bare-hostname click 404s).
+async fn root(State(state): State<AppState>) -> Json<Value> {
+    Json(json!({
+        "name": "freedback-discovery-server",
+        "version": env!("CARGO_PKG_VERSION"),
+        "servers": format!("{}/servers", state.base_url),
+        "resolve": format!("{}/resolve?target=", state.base_url),
+        "well_known": format!("{}/.well-known/freedback", state.base_url),
+        "docs": "https://freedback.net/",
+    }))
 }
 
 /// `GET /.well-known/freedback` — the registry's own self-description.

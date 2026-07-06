@@ -633,6 +633,19 @@ pub async fn post_by_id(
     Ok(Json(json!(out)))
 }
 
+/// `GET /` — a tiny human-clickable index. An API server 404ing at its bare
+/// hostname reads as broken to anyone who clicks the link; point them at the
+/// real entry points instead.
+pub async fn root(State(state): State<AppState>) -> Json<Value> {
+    Json(json!({
+        "name": "freedback-feedback-server",
+        "version": env!("CARGO_PKG_VERSION"),
+        "annotations": format!("{}/annotations/", state.base_url),
+        "well_known": format!("{}/.well-known/freedback", state.base_url),
+        "docs": "https://freedback.net/",
+    }))
+}
+
 /// `GET /.well-known/freedback` — capabilities self-description.
 ///
 /// When a default data license is configured (`FREEDBACK_DEFAULT_LICENSE`),

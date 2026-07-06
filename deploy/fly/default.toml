@@ -1,0 +1,56 @@
+# Fly.io app: **freedback-default** — Freedback's default feedback server.
+#
+# default = PERSISTENT: this is the real one. RocksDB on a Fly volume, so
+# data survives restarts and deploys. Dogfooding (feedback about Freedback
+# itself, from the landing page) publishes here; the throwaway demo pages use
+# `freedback-demo` (demo.toml) instead.
+#
+# First-time setup (one-off, with flyctl authenticated):
+#   fly apps create freedback-default --org personal        # CD also does this
+#   fly volumes create freedback_data --size 1 --region cdg --app freedback-default
+#   fly deploy --remote-only --config deploy/fly/default.toml
+#   fly certs  add default.freedback.net --app freedback-default
+# (Recent flyctl auto-creates the volume on first deploy when [mounts] is
+# present; the explicit `volumes create` is the belt-and-braces path.)
+#
+# NOTE: a volume attaches to ONE machine — keep this app at a single machine
+# (no fly scale count > 1) unless you also add more volumes.
+
+app = "freedback-default"
+primary_region = "cdg"
+
+[build]
+  # The on-disk Oxigraph/RocksDB image (Dockerfile ARG) — durable storage.
+  [build.args]
+    FEEDBACK_FEATURES = "rocksdb"
+
+[processes]
+app = "freedback-feedback-server"
+
+[env]
+FREEDBACK_BIND = "0.0.0.0:8080"
+# The public URL (it mints ids/links). DNS/cert: fly certs add default.freedback.net
+FREEDBACK_BASE_URL = "https://default.freedback.net"
+# Browser widgets on freedback.net read/publish cross-origin.
+FREEDBACK_CORS_PERMISSIVE = "1"
+# Durable store on the mounted volume.
+FREEDBACK_ROCKSDB_PATH = "/data/db"
+# Server-wide default data license (ADR 0022): annotations published without
+# an explicit `rights` are distributed under CC BY 4.0.
+FREEDBACK_DEFAULT_LICENSE = "https://creativecommons.org/licenses/by/4.0/"
+
+[mounts]
+source = "freedback_data"
+destination = "/data"
+initial_size = "1gb"
+
+[http_service]
+internal_port = 8080
+force_https = true
+# Scale-to-zero is safe here BECAUSE storage is on the volume — the machine
+# sleeping does not lose data. Bump min_machines_running to 1 to trade a few
+# dollars for zero cold starts.
+auto_stop_machines = true
+auto_start_machines = true
+min_machines_running = 0
+processes = ["app"]

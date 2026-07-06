@@ -533,6 +533,23 @@ async fn well_known_advertises_capabilities() {
     assert_eq!(doc["conformsTo"], "https://freedback.net/profile/1");
 }
 
+/// A click on the bare hostname gets a small index, not a 404.
+#[tokio::test]
+async fn root_serves_a_clickable_index() {
+    let app = app();
+    let (status, _h, doc) = send(&app, "GET", "/", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(doc["name"], "freedback-feedback-server");
+    assert!(doc["annotations"]
+        .as_str()
+        .unwrap()
+        .ends_with("/annotations/"));
+    assert!(doc["well_known"]
+        .as_str()
+        .unwrap()
+        .ends_with("/.well-known/freedback"));
+}
+
 // --- data licensing (ADR 0022) ------------------------------------------------
 
 const LICENSE: &str = "https://creativecommons.org/licenses/by/4.0/";

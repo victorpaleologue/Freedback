@@ -1,8 +1,9 @@
 name: Deploy (Fly.io)
 
-# Continuous deployment of the demo servers to Fly.io (docs/hosting.md):
-#   * feedback (demo) server  -> app in deploy/fly/feedback.toml
-#   * discovery server        -> app in deploy/fly/discovery.toml
+# Continuous deployment of the live servers to Fly.io (docs/hosting.md):
+#   * default (persistent) server -> deploy/fly/default.toml  (freedback-default)
+#   * demo (ephemeral) server     -> deploy/fly/demo.toml     (freedback-demo)
+#   * discovery server            -> deploy/fly/discovery.toml (freedback-discovery)
 #
 # GUARDED: the deploy job runs only when a `FLY_API_TOKEN` repo secret is
 # present, via the `guard` job below — an absent token skips deploy cleanly, so
@@ -74,10 +75,20 @@ jobs:
     if: ${{ needs.guard.outputs.has_token == 'true' }}
     runs-on: ubuntu-latest
     strategy:
-      # Independent apps — deploy both, don't abort one if the other fails.
+      # Independent apps — deploy all, don't abort one if another fails.
       fail-fast: false
       matrix:
-        config: [feedback, discovery]
+        # `config` names the deploy/fly/<config>.toml file; `env_name` is the
+        # GitHub environment recorded for the deployment (must be a literal
+        # here — the environment name resolves before steps run, so it cannot
+        # come from the toml itself).
+        include:
+          - config: default
+            env_name: freedback-default
+          - config: demo
+            env_name: freedback-demo
+          - config: discovery
+            env_name: freedback-discovery
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       # Optional: set a repo variable FLY_ORG to deploy under a non-personal org.
@@ -86,7 +97,7 @@ jobs:
     # up front (matrix/vars/needs only — no step outputs), `url` is applied
     # once the job finishes and can reference step outputs.
     environment:
-      name: fly-${{ matrix.config }}
+      name: ${{ matrix.env_name }}
       url: ${{ steps.app.outputs.url }}
     steps:
       - uses: actions/checkout@v4

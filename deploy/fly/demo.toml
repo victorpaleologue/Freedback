@@ -1,0 +1,37 @@
+# Fly.io app: the Freedback **demo feedback server** (component 1).
+#
+# demo = LIVE PLAYGROUND: in-memory storage, ephemeral by design — data may
+# reset on restart, and that's fine here. The demo pages (/demo/, /anywhere/,
+# /collect/, /questionnaire/, /barcode/) publish to this app. The REAL
+# persistent server is `freedback-default` (default.toml) — dogfooding and
+# anything that should survive goes there.
+#
+# Deploy from the repo root (so the Docker build context is the workspace):
+#   fly launch --no-deploy --copy-config --config deploy/fly/demo.toml --name freedback-demo
+#   fly deploy            --config deploy/fly/demo.toml
+
+app = "freedback-demo"
+primary_region = "cdg" # pick one near you: fly platform regions
+
+[build]
+# No build args → the default in-memory Oxigraph image (no Clang/RocksDB).
+
+[processes]
+# The image bundles all three servers; run the feedback server in this app.
+app = "freedback-feedback-server"
+
+[env]
+FREEDBACK_BIND = "0.0.0.0:8080"
+# The public URL (it mints ids/links). DNS/cert: fly certs add demo.freedback.net
+FREEDBACK_BASE_URL = "https://demo.freedback.net"
+# Let the browser widgets on freedback.net read cross-origin.
+FREEDBACK_CORS_PERMISSIVE = "1"
+
+[http_service]
+internal_port = 8080
+force_https = true
+# Scale to zero when idle (cheap); wakes on the next request (brief cold start).
+auto_stop_machines = true
+auto_start_machines = true
+min_machines_running = 0
+processes = ["app"]
