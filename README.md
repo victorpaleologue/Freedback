@@ -25,8 +25,8 @@ deletion, not a flag — no matter who's hosting it. See it live at
 Drop-in, framework-agnostic Web Components — a side-effect import registers
 six custom elements (`<freedback-stars>`, `<freedback-comment>`, …), config is
 all `data-*`, so React (and everything else) just renders them. The example
-below reads from and publishes to our live demo server — swap `data-read`
-and `data-publish` for your own once you have one (see
+below reads from and publishes to Freedback's default (persistent) server —
+swap `data-read` and `data-publish` for your own once you have one (see
 [Run your own server](#run-your-own-server)):
 
 ```sh
@@ -39,8 +39,8 @@ npm add @freedback/widgets
 </script>
 <freedback-stars
   data-target="https://shop.example/product/42"
-  data-read="https://freedback-demo.fly.dev/annotations/"
-  data-publish="https://freedback-demo.fly.dev/annotations/"
+  data-read="https://freedback-default.fly.dev/annotations/"
+  data-publish="https://freedback-default.fly.dev/annotations/"
   data-sign
 ></freedback-stars>
 ```
