@@ -126,9 +126,10 @@ with `tauri android init`, you MUST preserve:
 
 - **Camera scanning**: the Home screen's "Scan (soon)" button is the landing
   spot for the barcode-scanner plugin (M3).
-- **Issue reports**: `// TODO(issue-type)` seams (core `Contribution`,
-  `FeedbackView`, and the parked UI composer) activate once `Body::Issue`
-  (branch `claude/issue-type`) lands in `freedback-protocol`.
+- **Issue reports**: `Body::Issue` (ADR 0023) has landed in `freedback-protocol`;
+  `FeedbackView::issues` now aggregates them. The remaining `// TODO(issue-type)`
+  seam is submission: `Contribution` and the composer UI don't yet expose an
+  "Issue" action, so issues can only be read, not created, from the app.
 - The Feedback screen aggregates the **read view** (every annotation). The
   protocol's edit-supersession collapses per `(issuer, target)` in the
   `/sync` latest-edits view (`AppCore::get_feedback_latest`); merging both

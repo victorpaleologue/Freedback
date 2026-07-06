@@ -110,8 +110,8 @@ pub struct FeedbackView {
     pub comments: Vec<TextItem>,
     /// Tags, oldest first.
     pub tags: Vec<TextItem>,
-    // TODO(issue-type): `pub issues: Vec<TextItem>` once `Body::Issue`
-    // (branch claude/issue-type) lands in freedback-protocol.
+    /// Issues / problem reports (`Body::Issue`, ADR 0023), oldest first.
+    pub issues: Vec<TextItem>,
     /// Total number of annotations considered.
     pub total: usize,
 }
@@ -150,6 +150,11 @@ pub fn aggregate(target: &str, annotations: &[Annotation]) -> FeedbackView {
                     created: ann.created.clone(),
                 }),
                 Body::Tag { value } => view.tags.push(TextItem {
+                    text: value.clone(),
+                    creator: creator.clone(),
+                    created: ann.created.clone(),
+                }),
+                Body::Issue { value } => view.issues.push(TextItem {
                     text: value.clone(),
                     creator: creator.clone(),
                     created: ann.created.clone(),
