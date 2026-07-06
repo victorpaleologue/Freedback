@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  var LIVE_ANNOTATIONS = "https://freedback-demo.fly.dev/annotations/";
+  var LIVE_ANNOTATIONS = "https://freedback-default.fly.dev/annotations/";
   var LICENSE = "https://creativecommons.org/licenses/by/4.0/";
 
   function init() {

@@ -52,11 +52,12 @@ Full walkthrough (React, outcome events, a reusable wrapper) in
 ### Collect and query the data
 
 The wire format is plain HTTP + JSON-LD, so reading feedback needs nothing
-Freedback-specific — these all hit our live demo server; swap the host for
-your own once you have one (see [below](#run-your-own-server)):
+Freedback-specific — these hit Freedback's default (persistent) server, where
+the project's own dogfood feedback lives; swap the host for your own once you
+have one (see [below](#run-your-own-server)):
 
 ```sh
-curl 'https://freedback-demo.fly.dev/annotations/?target=https://freedback.net/' | jq
+curl 'https://freedback-default.fly.dev/annotations/?target=https://freedback.net/' | jq
 ```
 
 Existing W3C Web Annotation tools read it with zero Freedback-specific code
@@ -69,7 +70,7 @@ Or the bundled CLI (`cargo run -p freedback-cli-client --`, binary name
 `freedback`):
 
 ```sh
-cargo run -p freedback-cli-client -- read --server https://freedback-demo.fly.dev --target https://freedback.net/
+cargo run -p freedback-cli-client -- read --server https://freedback-default.fly.dev --target https://freedback.net/
 ```
 
 ### Run your own server
@@ -95,8 +96,7 @@ docker run -p 8080:8080 -e FREEDBACK_BASE_URL=https://feedback.example.org \
 ```
 
 Once it's running, every example above works exactly the same way against
-it — just swap `https://freedback-demo.fly.dev` for your server's own base
-URL: `data-read`/`data-publish` on the widgets, the URL in `curl`/browser
+it — just swap the hosts above for your server's own base URL: `data-read`/`data-publish` on the widgets, the URL in `curl`/browser
 requests, and `--server` on the CLI. Nothing else changes; the target, the
 signing, and the wire format are unaffected by which server you publish to
 or read from.

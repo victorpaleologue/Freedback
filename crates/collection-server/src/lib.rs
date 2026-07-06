@@ -228,6 +228,8 @@ impl AppState {
 pub fn build_app(state: AppState) -> Router {
     let cors_permissive = state.cors_permissive;
     let router = Router::new()
+        // A human-clickable index at the bare hostname (else: 404 on click).
+        .route("/", get(root))
         .route("/servers", post(register_server).get(list_servers))
         .route("/index", get(index))
         .route("/equivalence", post(post_equivalence).get(get_equivalence))
@@ -627,6 +629,17 @@ async fn metrics(State(state): State<AppState>) -> Json<Value> {
         "upstreamCalls": state.upstream_calls(),
         "upstream304": state.upstream_304(),
         "cacheHits": state.cache_hits(),
+    }))
+}
+
+/// `GET /` — a tiny human-clickable index (else a bare-hostname click 404s).
+async fn root(State(state): State<AppState>) -> Json<Value> {
+    Json(json!({
+        "name": "freedback-collection-server",
+        "version": env!("CARGO_PKG_VERSION"),
+        "index": format!("{}/index?target=", state.base_url),
+        "well_known": format!("{}/.well-known/freedback", state.base_url),
+        "docs": "https://freedback.net/",
     }))
 }
 
