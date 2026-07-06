@@ -6,8 +6,7 @@
 ## Context
 
 The original 2014 Freedback proto defined exactly three feedback kinds:
-`Comment`, `Rating`, and
-[`Issue`](https://github.com/Toover/freedback/blob/master/freedback_grpc_python/freedback.proto)
+`Comment`, `Rating`, and `Issue`
 (`message Issue { string text = 1; }`) — a free-text problem report about the
 subject. Comments and ratings have long been ported to the annotation model
 (INVARIANT 2); the issue type was still missing.

@@ -5,9 +5,9 @@
 
 ## Context
 
-The requirement is as old as the project. The original 2014 Freedback whitebook
-([Toover/freedback, "Data Distribution Policies"](https://github.com/Toover/freedback/blob/master/whitebook.md))
-demanded that every piece of feedback carry **explicit licensing**, recommended
+The requirement is as old as the project. The original 2014 Freedback
+whitebook ("Data Distribution Policies") demanded that every piece of
+feedback carry **explicit licensing**, recommended
 Open Data / permissive Creative Commons defaults, and asked that licensing
 information be exposed at a designated endpoint so it is "contractually
 valuable for both collectors and publishers". The modern protocol had no

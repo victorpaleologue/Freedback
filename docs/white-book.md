@@ -1,4 +1,8 @@
-# Why Freedback exists
+# The Freedback White Book
+
+*The vision this project has carried since 2014 — the introductory document
+of this wiki. Everything else in [`docs/`](README.md) is the how; this is the
+why.*
 
 ## The vision
 
@@ -66,10 +70,12 @@ Concretely, today:
   feedback across all of them. No central authority. Ever.
 - It ships as working software: a Rust protocol core that runs native and in
   the browser, feedback/discovery/collection servers, clients, drop-in web
-  widgets, and a Firefox extension.
+  widgets, a Firefox extension, and an Android-first mobile app.
 
 Freedback is free as in freedom: MIT-licensed, non-contaminating, usable
-anywhere.
+anywhere. For exactly what's built and how the pieces fit together, see the
+[architecture overview](architecture.md); for the how of running or using any
+of it, start from the [wiki index](README.md).
 
 ## Principles
 
@@ -94,7 +100,10 @@ re-ingested. The right to be forgotten, implemented, not promised.
 **Subjects, not surveillance.** Straight from the original 2014 specification,
 and still binding: the focus of Freedback is to provide feedback on a
 *subject*, not to track user behavior. Queries are by target. We aggregate
-opinions about things; we do not build profiles of people.
+opinions about things; we do not build profiles of people. (One narrow,
+deliberately understated exception: since an author's identity is an IRI too,
+it can itself be a feedback target — see `/author/` in the widgets. It is
+opt-in, text-only, and nowhere close to a public score.)
 
 **Using Freedback in Freedback.** We dogfood. The software we ship to collect
 feedback should itself collect feedback about the project. Using what we
@@ -102,9 +111,8 @@ produce forces us to see it — and to be more critical about it.
 
 ## Heritage
 
-Freedback has been brewing since 2014. The vision, the strategy, the use
-cases, and most of these principles come from the original white book at
-[github.com/Toover/freedback](https://github.com/Toover/freedback) — written
-long before the current implementation, and still setting its course. The
-technology changed (Web Annotations, SHACL, Rust, WASM); the battle cry did
-not.
+Freedback has been brewing since 2014. This white book continues one written
+long before the current implementation — the vision, the strategy, the use
+cases, and most of these principles come from it, and still set this
+project's course. The technology changed (Web Annotations, SHACL, Rust,
+WASM); the battle cry did not.
