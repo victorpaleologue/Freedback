@@ -96,10 +96,16 @@ jobs:
         working-directory: apps/mobile/src-tauri
         run: tauri android build --apk --aab --target aarch64
       - name: Collect unsigned artifacts
+        # `--target aarch64` selects which ABI's .so gets bundled, not the
+        # Gradle output directory naming — `tauri android build` still
+        # assembles the "universal" variant/flavor regardless of --target
+        # (confirmed from the actual build log: "Finished 1 APK at: …
+        # outputs/apk/universal/release/app-universal-release-unsigned.apk"),
+        # same pattern already seen on the debug build in app-ci.yml.
         run: |
           mkdir -p dist
-          cp apps/mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk dist/
-          cp apps/mobile/src-tauri/gen/android/app/build/outputs/bundle/arm64Release/*.aab dist/
+          cp apps/mobile/src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk dist/
+          cp apps/mobile/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab dist/
           ls -l dist
 
       # ---- signed path (secrets present) -----------------------------------
@@ -133,10 +139,14 @@ jobs:
           (cd dist && sha256sum * > "freedback-${TAG}-android.sha256")
           ls -l dist
 
+      # On a tag-less smoke-test dispatch TAG is the branch name, which may
+      # contain "/" — invalid in an artifact name. Sanitize just for naming.
+      - name: Sanitize the tag for the artifact name
+        run: echo "SAFE_TAG=${TAG//\//-}" >> "$GITHUB_ENV"
       - name: Upload artifacts (signed or unsigned)
         uses: actions/upload-artifact@v4
         with:
-          name: freedback-android-${{ env.TAG }}
+          name: freedback-android-${{ env.SAFE_TAG }}
           path: dist/
           if-no-files-found: error
 
