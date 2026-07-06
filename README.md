@@ -1,59 +1,117 @@
 # Freedback
 
-**Everything deserves feedback — especially when we, the people, are
-impacted.** Read the manifesto in [WHY.md](WHY.md) for the vision this project
-has carried since 2014.
-
 > A federated, open protocol for typed feedback on anything with a URI —
 > stars, scalar ratings, thumbs, comments and tags — carried as **W3C Web
 > Annotations** and signed with portable keys, so feedback is no longer locked
 > inside the silo that collected it.
 
-Freedback lets anyone attach feedback to any resource, publish it to a server
-they choose, and have it discovered and aggregated across servers — without a
-central gatekeeper. The wire format is a standard Web Annotation (JSON-LD), so
-existing annotation tooling can already read it.
+## Why
 
-## Status
-
-Early implementation. The protocol core (`protocol-lib`) is functional and
-green on **native + wasm32**:
-
-- ✅ Web Annotation model with typed rating/comment/tag bodies
-- ✅ Content-addressed dedup id (RFC 8785 JCS + SHA-256)
-- ✅ Self-signed ECDSA P-256 identity (detached ES256 signatures)
-- ✅ Shapes-driven SHACL-Core-subset validation (native; browsers validate via
-  the server, per ADR 0004)
-- ✅ Storage trait + in-memory and Oxigraph backends (shared conformance suite)
-- ✅ Feedback server (axum): WAP container, paging, `/sync`, dual auth, well-known
-- ✅ Basic client (native + wasm32): read / write / sync over endpoints & files
-- ✅ Discovery server (registry): announce-with-verify + resolve (federation)
-- ✅ Collection server: index, URI equivalence, polite caching, rate limiting
-- ✅ Advanced client: local redb sync copy with resume cursor + dedup-on-merge
-- ✅ Equivalence-detection prompt (`agent-prompts/equivalence.md`)
-- ✅ Deployment: `docker compose up` for the full stack; Pages serves the ontology
-- ✅ Web widgets (vanilla Web Components), Firefox MV3 popup, W3C interop demo
-
-All 10 milestones have a working deliverable; the Rust backbone is done and
-tested (43 Rust tests + JS helper tests).
-**Naming note:** the canonical IRIs and the Pages site use the owned
-**`freedback.net`** domain; an unrelated dormant npm `freedback` holds
-`freedback.dev` — see [`docs/naming.md`](docs/naming.md).
+We can't force every organization to open a feedback channel — so we make our
+own. Freedback lets anyone attach feedback to any resource, publish it to a
+server they choose, and have it discovered and aggregated across servers,
+without a central gatekeeper. The wire format is a standard Web Annotation
+(JSON-LD), so existing annotation tooling can already read it, and your
+feedback stays yours: sign it with your own key, edit it, or delete it — real
+deletion, not a flag — no matter who's hosting it. See it live at
+[freedback.net](https://freedback.net/), read the full vision in
+**[the White Book](docs/white-book.md)**, or browse the rest of
+**[the design docs](docs/README.md)**.
 
 ## Quick start
 
-```bash
-# Whole stack in one command (ephemeral in-memory storage):
-docker compose up --build      # feedback :8080 · discovery :8090 · collection :8100
+### Use the widgets (npm)
 
-# Native: build, lint, test the whole workspace
-cargo test --workspace
+Drop-in, framework-agnostic Web Components — a side-effect import registers
+six custom elements (`<freedback-stars>`, `<freedback-comment>`, …), config is
+all `data-*`, so React (and everything else) just renders them. The example
+below reads from and publishes to our live demo server — swap `data-read`
+and `data-publish` for your own once you have one (see
+[Run your own server](#run-your-own-server)):
 
-# Browser target: the dual-target core must build for wasm32
-rustup target add wasm32-unknown-unknown
-cargo build -p freedback-protocol --no-default-features --features wasm \
-  --target wasm32-unknown-unknown
+```sh
+npm add @freedback/widgets
 ```
+
+```html
+<script type="module">
+  import "@freedback/widgets";
+</script>
+<freedback-stars
+  data-target="https://shop.example/product/42"
+  data-read="https://freedback-demo.fly.dev/annotations/"
+  data-publish="https://freedback-demo.fly.dev/annotations/"
+  data-sign
+></freedback-stars>
+```
+
+No build step? The same script works from a plain `<script src="…">` tag too.
+Full walkthrough (React, outcome events, a reusable wrapper) in
+[`docs/widgets-react.md`](docs/widgets-react.md).
+
+### Collect and query the data
+
+The wire format is plain HTTP + JSON-LD, so reading feedback needs nothing
+Freedback-specific — these all hit our live demo server; swap the host for
+your own once you have one (see [below](#run-your-own-server)):
+
+```sh
+curl 'https://freedback-demo.fly.dev/annotations/?target=https://freedback.net/' | jq
+```
+
+Existing W3C Web Annotation tools read it with zero Freedback-specific code
+too — [Annotorious](https://annotorious.dev/) or
+[RecogitoJS](https://recogito.github.io/recogitojs/) can consume a collection
+page as-is (see [`demo-third-party/`](demo-third-party/) for a working
+example).
+
+Or the bundled CLI (`cargo run -p freedback-cli-client --`, binary name
+`freedback`):
+
+```sh
+cargo run -p freedback-cli-client -- read --server https://freedback-demo.fly.dev --target https://freedback.net/
+```
+
+### Run your own server
+
+Directly with Cargo (in-memory storage, zero config):
+
+```sh
+cargo run -p freedback-feedback-server   # binds 127.0.0.1:8080
+```
+
+Or the whole stack (feedback + discovery + collection) with Docker Compose:
+
+```sh
+docker compose up --build     # feedback :8080 · discovery :8090 · collection :8100
+```
+
+Or a single container:
+
+```sh
+docker build -t freedback .
+docker run -p 8080:8080 -e FREEDBACK_BASE_URL=https://feedback.example.org \
+  freedback freedback-feedback-server
+```
+
+Once it's running, every example above works exactly the same way against
+it — just swap `https://freedback-demo.fly.dev` for your server's own base
+URL: `data-read`/`data-publish` on the widgets, the URL in `curl`/browser
+requests, and `--server` on the CLI. Nothing else changes; the target, the
+signing, and the wire format are unaffected by which server you publish to
+or read from.
+
+There's no prebuilt public image yet — both commands above build locally
+(tracked as [#73](https://github.com/victorpaleologue/Freedback/issues/73)).
+Environment variables, storage backends, and hosting a public instance are
+covered in [`docs/deployment.md`](docs/deployment.md) and
+[`docs/hosting.md`](docs/hosting.md).
+
+### Use it as a Rust library
+
+The protocol core (`protocol-lib`) builds and validates annotations, signs
+and verifies them, and computes the content-addressed dedup id — usable
+directly, no server required:
 
 ```rust
 use freedback_protocol::{Annotation, Body, Identity, Motivation, Target};
@@ -74,16 +132,58 @@ let id = dedup_id(&ann)?; // stable across servers and re-POSTs
 # Ok::<(), freedback_protocol::Error>(())
 ```
 
+`protocol-lib` targets both native and `wasm32-unknown-unknown` (browser)
+builds from the same source — see [`docs/architecture.md`](docs/architecture.md)
+for the full crate map.
+
+## Features
+
+- **W3C Web Annotation wire format** — every piece of feedback is a standard
+  Web Annotation (JSON-LD): a target, a body, a motivation. Existing
+  annotation tooling reads it with zero Freedback-specific code.
+  ([ADR 0001](docs/adr/0001-rust-workspace-and-wire-format.md))
+- **Typed feedback bodies** — star/scalar/thumb ratings (subclasses of
+  `schema:Rating`), comments, tags, and issue/problem reports, all reusing
+  existing vocabulary bar one net-new term.
+  ([ADR 0009](docs/adr/0009-custom-rating-scales.md),
+  [ADR 0023](docs/adr/0023-issue-feedback-type.md))
+- **Content-addressed dedup id** — SHA-256 over the RFC 8785 canonical bytes,
+  so the same annotation re-posted to any server (or the same server twice)
+  collapses to one id. ([ADR 0002](docs/adr/0002-dedup-id-jcs.md))
+- **Self-signed portable identity** — an ECDSA P-256 keypair you own; your
+  public key is your name, your signature travels with your feedback, any
+  server can verify it with no shared secret or account.
+  ([ADR 0003](docs/adr/0003-dual-identity-p256.md))
+- **Right to erasure** — the signing key is the only key that can edit or
+  delete what it signed, and deletion is real: content is erased, only a
+  content-free tombstone remains so caches learn to forget too.
+  ([ADR 0021](docs/adr/0021-right-to-erasure-deletion.md))
+- **Data licensing** — an optional `rights` IRI on each annotation, and a
+  server-wide default license advertised in `/.well-known/freedback`.
+  ([ADR 0022](docs/adr/0022-data-licensing.md))
+- **SHACL-driven validation** — every constraint (datatype, bounds, required
+  fields) lives in one SHACL profile, pinned by
+  `dcterms:conformsTo`, never in OWL/RDFS.
+  ([ADR 0004](docs/adr/0004-validation-in-shacl.md))
+- **Federated discovery & aggregation** — servers announce themselves to a
+  discovery registry; a collection server finds, dedups, and caches feedback
+  across all of them, with URI equivalence and polite rate limiting. No
+  central authority.
+- **Author identity as a target** — an author's public key is an IRI too, so
+  it can itself carry feedback (a discreet, opt-in, text-only "review this
+  author" view — deliberately not a public score).
+- **Pluggable storage** — a `FeedbackStore` trait behind everything; Oxigraph
+  (embedded RDF/SPARQL) in production, SQLite/in-memory for tests.
+- **Drop-in surfaces** — vanilla Web Component widgets (npm + `<script src>`),
+  a Firefox extension, and an Android-first mobile app (Tauri 2 + Rust),
+  sharing the same protocol core.
+
 ## Documentation
 
-- [Architecture overview](docs/architecture.md)
-- [Using the widgets in React](docs/widgets-react.md) — tutorial + API review
-- [Deployment](docs/deployment.md)
-- [Hosting a demo (Fly.io / HF Spaces)](docs/hosting.md)
-- [Design decisions (ADRs)](docs/adr/)
-- [Roadmap & issue map](docs/roadmap.md)
-- [Agent invariants](CLAUDE.md) — the rules every contributor works under
-- [Attributions](docs/attributions.md)
+Full docs live in [`docs/`](docs/README.md) — start with
+[the White Book](docs/white-book.md) for the vision, or
+[the architecture overview](docs/architecture.md) for how the pieces above
+fit together.
 
 ## License
 

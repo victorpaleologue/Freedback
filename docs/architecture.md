@@ -30,6 +30,7 @@ annotation tooling can read it.
 
    clients: cli-client (native+wasm) · advanced-client (local sync copy)
    surfaces: web widgets (JS) · Firefox extension (JS) · 3rd-party WA demo
+             · mobile app (Tauri 2 + Rust, Android-first)
 ```
 
 ## Components and responsibilities
@@ -48,6 +49,7 @@ annotation tooling can read it.
 | 7 | Collection server | `collection-server` | native | cache, per-URI index, equivalence, politeness |
 | 8 | Equivalence agent | `agent-prompts/` | native job | propose URI equivalences for component 7 |
 | 9 | Firefox extension | `firefox-extension/` | JS (+wasm) | list feedback for the current page |
+| 10 | Mobile app | `apps/mobile/` | native (own workspace) | Tauri 2 + Rust, Android-first: scan/share a barcode/URL/ISBN, view and contribute feedback, manage your own posts and key |
 
 ## Two identities, two trust models (INVARIANT 4)
 
@@ -91,8 +93,6 @@ The non-obvious decisions are written up as ADRs in [`docs/adr/`](./adr):
 - [0002 — Content-addressed dedup id via RFC 8785 JCS](./adr/0002-dedup-id-jcs.md)
 - [0003 — Self-signed P-256 identity (federating)](./adr/0003-dual-identity-p256.md)
 - [0004 — All validation in SHACL, never OWL/RDFS](./adr/0004-validation-in-shacl.md)
-- [0005 — Storage behind a trait; Oxigraph primary](./adr/0005-storage-trait-oxigraph.md)
-- [0006 — Discovery: flat list first, resolver second](./adr/0006-discovery-flat-then-resolver.md)
 - [0007 — JSON-LD is primary on ingest, not interop](./adr/0007-jsonld-primary-ingest.md)
 - [0008 — Durable demo storage via JSON-Lines snapshots](./adr/0008-snapshot-persistence.md)
 - [0009 — Custom rating scales via `sh:lessThanOrEquals`](./adr/0009-custom-rating-scales.md)
@@ -101,6 +101,15 @@ The non-obvious decisions are written up as ADRs in [`docs/adr/`](./adr):
 - [0012 — HTTP cache freshness + validators (collection ↔ feedback)](./adr/0012-cache-freshness-and-validators.md)
 - [0013 — WebCrypto P-256 signing in the widgets](./adr/0013-webcrypto-widget-signing.md)
 - [0014 — NIP-65-style relay list (outbox discovery)](./adr/0014-nip65-relay-list-resolver.md)
+- [0015 — Discovery hardening: liveness, signed announces, relay-list gossip](./adr/0015-discovery-hardening.md)
+- [0016 — Storage durability: SQLite mock + persistent collection state](./adr/0016-storage-durability.md)
+- [0017 — Negentropy (NIP-77) range-based sync](./adr/0017-negentropy-sync.md)
+- [0018 — feedback-server conformance hardening](./adr/0018-feedback-server-conformance.md)
+- [0019 — Deployment: musl static binaries, RocksDB durable backend, release pipeline](./adr/0019-deployment-musl-rocksdb-release.md)
+- [0020 — Canonical domain: `freedback.net`](./adr/0020-canonical-domain-freedback-net.md)
+- [0021 — Right to erasure: author-signed deletion replaces "append-only"](./adr/0021-right-to-erasure-deletion.md)
+- [0022 — Data licensing: a `rights` IRI on the annotation](./adr/0022-data-licensing.md)
+- [0023 — The issue / problem-report feedback type](./adr/0023-issue-feedback-type.md)
 
 See [`roadmap.md`](./roadmap.md) for milestones and the issue map, and
 [`attributions.md`](./attributions.md) for harvested-code provenance.
