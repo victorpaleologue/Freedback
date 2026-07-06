@@ -9,6 +9,9 @@ members = [
     "crates/collection-server",
     "crates/advanced-client",
 ]
+# The mobile app is its own workspace (apps/mobile) so root-wide cargo commands
+# never pull the Tauri/Android dependency tree. See apps/mobile/README.md.
+exclude = ["apps/mobile"]
 
 [workspace.package]
 version = "1.0.0"

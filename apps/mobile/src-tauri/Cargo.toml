@@ -1,0 +1,33 @@
+[package]
+name = "freedback-app"
+description = "Freedback mobile app shell (Tauri 2): thin commands over freedback-app-core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# Tauri mobile entry point: the app is a library (staticlib/cdylib) on
+# Android/iOS and a plain binary on desktop.
+[lib]
+name = "freedback_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "freedback-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+freedback-app-core = { path = "../core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-deep-link = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+# One-shot current-thread runtimes for the (non-Send) core futures — see
+# `run_core` in src/lib.rs. The full feature set is already in the graph via
+# reqwest; listing what we use keeps intent clear.
+tokio = { version = "1", features = ["rt", "net", "time"] }

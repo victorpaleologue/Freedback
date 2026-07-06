@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">"Freedback"</string>
+    <string name="main_activity_title">"Freedback"</string>
+    <string name="share_activity_title">"Look up feedback…"</string>
+</resources>

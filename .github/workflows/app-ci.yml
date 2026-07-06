@@ -1,0 +1,290 @@
+name: App CI
+
+# The mobile app's pipeline (apps/mobile is its own Cargo workspace, excluded
+# from the root one; the root ci.yml ignores apps/mobile/** in mirror). Three
+# test tiers:
+#   1. `core`        — narrow, fast Rust unit/integration tests of the pure
+#                      logic crate (freedback-app-core), no app shell.
+#   2. `desktop-e2e` — the PRIMARY UX coverage: tauri-driver (WebDriver)
+#                      drives the REAL desktop binary — webview, IPC commands,
+#                      Rust core, and a real local feedback server — headless
+#                      via xvfb.
+#   3. `android-test`— a couple of instrumentation tests (espresso-intents)
+#                      for what only a device proves: the ShareActivity →
+#                      freedback:// intent bridge.
+# Plus `shell` (clippy of the Tauri command layer) and `android-build` (the
+# debug APK cross-build).
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["apps/mobile/**", ".github/workflows/app-ci.yml"]
+  pull_request:
+    paths: ["apps/mobile/**", ".github/workflows/app-ci.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: app-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # --- tier 1: pure-logic tests of the core crate (no webkit, no Android) ---
+  core:
+    name: core (fmt · clippy · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable + components)
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          rustc --version && cargo --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile
+          key: app-core
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy (core, all targets)
+        run: cargo clippy -p freedback-app-core --all-targets -- -D warnings
+      - name: test (core)
+        run: cargo test -p freedback-app-core
+
+  # --- lint of the Tauri shell (command layer) without a full app build ------
+  shell:
+    name: shell (clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable + clippy)
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+          rustc --version
+      - name: Install Tauri Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile
+          key: app-shell
+      - name: clippy (src-tauri)
+        working-directory: apps/mobile
+        run: cargo clippy -p freedback-app -- -D warnings
+
+  # --- tier 2 (PRIMARY): native UX suite via tauri-driver + WebDriver --------
+  desktop-e2e:
+    name: desktop e2e (tauri-driver · real app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+      - name: Install Tauri Linux build deps + WebDriver host pieces
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            webkit2gtk-driver xvfb
+          WebKitWebDriver --version || true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Both workspaces build here: the app (apps/mobile) and the test
+          # feedback server (root).
+          workspaces: |
+            apps/mobile
+            .
+          key: app-e2e
+      - name: Install tauri-driver
+        run: |
+          cargo install tauri-driver --locked
+          tauri-driver --version || true
+      - name: Build the app under test (debug)
+        working-directory: apps/mobile
+        run: cargo build -p freedback-app
+      - name: Build the test feedback server (in-memory store)
+        run: cargo build -p freedback-feedback-server
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install the WebdriverIO suite (pinned via lockfile)
+        working-directory: apps/mobile/e2e
+        run: npm ci
+      - name: Run the native UX suite (headless via xvfb)
+        working-directory: apps/mobile/e2e
+        run: xvfb-run -a npm test
+
+  # --- Android: cross-build the debug APK -----------------------------------
+  android-build:
+    name: android build (debug apk · aarch64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0 platform-tools ndk;27.1.12297006"
+      - name: Export NDK_HOME
+        run: |
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+      - name: Install Rust (stable + Android target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile
+          key: app-android
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install the Tauri CLI (also used by the Gradle rust plugin)
+        run: |
+          npm i -g @tauri-apps/cli
+          tauri --version
+      - name: Build the debug APK (aarch64)
+        working-directory: apps/mobile/src-tauri
+        # tauri-cli's Gradle integration re-invokes the `tauri` binary as a
+        # Gradle task (`rustBuild<Arch>Debug`), which connects back to THIS
+        # parent CLI process over a local WebSocket to fetch CLI options
+        # (tauri-cli's mobile/mod.rs `read_options`). That WebSocket server
+        # is started asynchronously, so on rare occasions Gradle's task
+        # graph reaches the rust-build task before the server is accepting
+        # connections yet, and the sub-process's connect attempt is refused
+        # ("failed to read CLI options ... Connection refused", os error
+        # 111) — a known-flaky upstream tauri-cli startup race, not a bug in
+        # our build. Retry a few times rather than failing the job over it.
+        run: |
+          for attempt in 1 2 3; do
+            if tauri android build --debug --apk --target aarch64; then
+              exit 0
+            fi
+            echo "::warning::tauri android build (aarch64) failed on attempt ${attempt} (possible tauri-cli CLI-options WebSocket startup race) — retrying"
+            sleep 5
+          done
+          exit 1
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: freedback-app-debug-apk
+          path: apps/mobile/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+  # --- tier 3: the ShareActivity intent bridge on a real emulator ------------
+  android-test:
+    name: android test (share intents · emulator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM group perms (hardware acceleration for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0 platform-tools ndk;27.1.12297006"
+      - name: Export NDK_HOME
+        run: |
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+      - name: Install Rust (stable + Android x86_64 target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-linux-android
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile
+          key: app-android-test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install the Tauri CLI (also used by the Gradle rust plugin)
+        run: |
+          npm i -g @tauri-apps/cli
+          tauri --version
+      - name: Pre-build the x86_64 debug app (rust + gradle, no emulator yet)
+        working-directory: apps/mobile/src-tauri
+        # See the aarch64 build step in the `android-build` job for the full
+        # explanation: this retries a rare tauri-cli mobile-build startup
+        # race (parent CLI's CLI-options WebSocket server vs. Gradle's
+        # rust-build task), not a bug in our own build. Applied to both
+        # jobs for consistency since either target can hit it on a given
+        # day.
+        run: |
+          for attempt in 1 2 3; do
+            if tauri android build --debug --apk --target x86_64; then
+              exit 0
+            fi
+            echo "::warning::tauri android build (x86_64) failed on attempt ${attempt} (possible tauri-cli CLI-options WebSocket startup race) — retrying"
+            sleep 5
+          done
+          exit 1
+      - name: Run the ShareActivity intent tests on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: default
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          working-directory: apps/mobile/src-tauri/gen/android
+          # -x rustBuildX86_64Debug: this is a DIFFERENT failure than the
+          # "Pre-build" step's retry loop guards against, despite the
+          # identical panic text. tauri's generated Gradle `rust` plugin
+          # task (buildSrc RustPlugin.kt / BuildTask.kt) declares @Input
+          # but no @OutputFile/@OutputDirectory, so Gradle can never mark
+          # it UP-TO-DATE — it re-executes on every invocation that reaches
+          # it, including this raw `./gradlew` one. When it runs, it shells
+          # out to `tauri android android-studio-script`, which (tauri-cli
+          # mobile/mod.rs `read_options`, ~line 403) connects back over a
+          # local WebSocket to fetch CLI options from a LIVE parent `tauri
+          # android ...` process (`write_options`). The "Pre-build" step
+          # above IS such a parent while it runs, but it's a one-shot build
+          # that has already exited by the time this step's plain
+          # `./gradlew` invocation starts — so there is no parent left to
+          # answer, and the task deterministically panics with "failed to
+          # read CLI options ... Connection refused". Confirmed locally:
+          # reproduced this exact panic by running `tauri android build
+          # --debug --apk --target x86_64` followed by a bare
+          # `./gradlew connectedX86_64DebugAndroidTest`, then confirmed
+          # that adding `-x rustBuildX86_64Debug` clears the panic and the
+          # build proceeds using the .so the Pre-build step already placed
+          # in app/src/main/jniLibs/x86_64 on this same checkout. Retrying
+          # would not help here — the parent process is gone, not merely
+          # slow to start — so skip the redundant task instead of retrying
+          # it.
+          script: ./gradlew connectedX86_64DebugAndroidTest --stacktrace -x rustBuildX86_64Debug
+      - name: Upload connected-test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-connected-test-reports
+          path: apps/mobile/src-tauri/gen/android/app/build/reports/androidTests
+          if-no-files-found: ignore
+          retention-days: 7
