@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback — privacy</title>
+  <meta name="description" content="What Freedback collects, what it doesn't, and why: no accounts, no tracking, no server-side profile — just the feedback you choose to sign and publish." />
+  <link rel="stylesheet" href="/freedback.css" />
+  <script src="/theme.js"></script>
+</head>
+<body>
+  <button class="fb-theme-toggle" data-fb-theme-toggle aria-label="Toggle light / dark theme"><span data-fb-theme-icon>🌙</span></button>
+  <main>
+  <h1>Privacy</h1>
+  <p class="sub">Short version: there is no account to create, so there is no
+  profile of you to collect. The only data Freedback handles is the feedback
+  you explicitly write and choose to publish.</p>
+
+  <div class="card">
+    <h3>What we collect</h3>
+    <p class="blurb">Nothing beyond what you actively submit: a rating,
+    comment, tag, or issue report, attached to whatever you're giving feedback
+    on (a URL, a product barcode, anything with a URI). That content is signed
+    with a self-signed cryptographic key generated on your own device — the
+    key itself is not an account, has no name or email attached, and never
+    leaves your device except as a public verification key riding along with
+    each thing you publish.</p>
+  </div>
+
+  <div class="card">
+    <h3>What we don't collect</h3>
+    <p class="blurb">No analytics, no trackers, no advertising identifiers, no
+    device fingerprinting, no behavioral profiling. We don't ask for your
+    name, email, or phone number, because publishing feedback never requires
+    one. The mobile app and the web widgets don't phone home for anything
+    other than the read/publish requests you trigger yourself (loading
+    feedback for something you're looking at, or sending feedback you wrote).</p>
+  </div>
+
+  <div class="card">
+    <h3>Your key, your data</h3>
+    <p class="blurb">Your signing key is the only thing establishing that
+    feedback is yours, and it lives under your control: export it, back it up,
+    move it to another device, or rotate it, from the app or the widgets'
+    identity tools. Because the key — not an account — is what makes an item
+    yours, you can update or delete anything you published yourself, at any
+    time, directly: a signed delete request is honored by the server, which
+    erases the content and keeps only a content-free marker so the deletion
+    itself can propagate to caches. See the project's <a
+    href="https://github.com/victorpaleologue/Freedback/blob/main/docs/adr/0021-right-to-erasure-deletion.md">right-to-erasure
+    ADR</a> if you want the exact mechanics.</p>
+  </div>
+
+  <div class="card">
+    <h3>Federation and caches</h3>
+    <p class="blurb">Freedback is a protocol, not a single service: other
+    servers can host and query the same feedback (that's the point — an
+    independent, non-siloed record of feedback about things, not a walled
+    garden). A query can be cached by an aggregator for a short time for
+    performance, but readers and caches are never owners of your data — only
+    the identity that signed something can edit or erase it, and an erasure
+    still reaches caches through the same tombstone mechanism.</p>
+  </div>
+
+  <div class="card">
+    <h3>Third parties</h3>
+    <p class="blurb">The demo servers linked from this site and from the
+    mobile app run on ordinary infrastructure providers (for hosting), which
+    see the same request metadata any web request generates (IP address,
+    timestamps) — nothing beyond what's inherent to serving HTTP. We don't
+    share, sell, or otherwise hand your feedback content to third parties
+    beyond making it available through the protocol itself, which is the
+    entire point of publishing it.</p>
+  </div>
+
+  <p class="nav">
+    <a href="/">← Home</a> &nbsp;·&nbsp;
+    <a href="/demo/">Main widget showcase →</a>
+  </p>
+
+  <footer>
+    <p>Source &amp; docs: <a href="https://github.com/victorpaleologue/Freedback">github.com/victorpaleologue/Freedback</a></p>
+  </footer>
+  </main>
+</body>
+</html>
