@@ -6,8 +6,7 @@ why.*
 
 ## The vision
 
-**Everything deserves feedback — especially when we, the people, are
-impacted.**
+**Everything deserves feedback — especially when people are impacted.**
 
 More than that: anything that affects us *should* offer a channel to hear us.
 A product. A law. A website. An app. A talk. But we cannot force every
