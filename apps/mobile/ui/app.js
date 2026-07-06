@@ -10,10 +10,11 @@ const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------- routing
 
-const VIEWS = ["home", "feedback", "journal", "key", "settings"];
+const VIEWS = ["home", "feedback", "author", "journal", "key", "settings"];
 const TITLES = {
   home: "Freedback",
   feedback: "Feedback",
+  author: "Author",
   journal: "My feedback",
   key: "My key",
   settings: "Settings",
@@ -21,6 +22,10 @@ const TITLES = {
 
 let currentView = "home";
 let currentTarget = null;
+let currentAuthor = null;
+// Where to return when leaving the author view — it's only ever reached by
+// tapping a fingerprint badge from within another view.
+let returnTo = null;
 
 function show(view) {
   currentView = view;
@@ -62,6 +67,44 @@ function shortIssuer(creator) {
   return `key …${tail.slice(-8)}`;
 }
 
+// Deterministic, non-cryptographic 32-bit FNV-1a over the issuer id — kept
+// byte-identical to widgets/freedback-widgets.js so the same author gets the
+// same badge everywhere (web widgets, author view, mobile app).
+function fingerprint(id) {
+  if (!id) return "";
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+// A discreet, tappable "#a1b2c3d4" badge next to a piece of feedback — a
+// "same author?" glance that opens a view of that identity used as an
+// ordinary feedback target (an author's own IRI is a target like any other).
+function authorBadge(creator) {
+  if (!creator) return null;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "fb-fp";
+  btn.textContent = `#${fingerprint(creator)}`;
+  btn.title = creator;
+  btn.addEventListener("click", () => openAuthor(creator));
+  return btn;
+}
+
+function commentLi(item) {
+  const li = document.createElement("li");
+  li.textContent = item.text;
+  const meta = document.createElement("span");
+  meta.className = "meta";
+  meta.append(authorBadge(item.creator) || "anonymous");
+  if (item.created) meta.append(" · " + item.created);
+  li.appendChild(meta);
+  return li;
+}
+
 // ----------------------------------------------------------------- home
 
 async function lookUp(raw) {
@@ -96,9 +139,7 @@ async function refreshFeedback() {
 
     const comments = $("fb-comments");
     comments.replaceChildren();
-    for (const c of view.comments) {
-      comments.appendChild(itemLi(c.text, `${shortIssuer(c.creator)}${c.created ? " · " + c.created : ""}`));
-    }
+    for (const c of view.comments) comments.appendChild(commentLi(c));
     if (view.comments.length === 0) comments.appendChild(itemLi("No comments yet."));
 
     const tags = $("fb-tags");
@@ -119,6 +160,46 @@ async function publishContribution(contribution) {
     flash("fb-ok", "Published ✓");
   } catch (e) {
     flash("fb-error", String(e));
+  }
+}
+
+// ----------------------------------------------------------------- author
+
+// An author's identity IRI is a feedback target like any other — no server
+// work needed to make an author reviewable. Intentionally text-only (a
+// comment, not a star rating): rating PEOPLE with a number is a different,
+// more fraught thing than rating a product, and this app would rather not
+// build that if it can help it.
+async function openAuthor(id) {
+  if (!id) return;
+  returnTo = { view: currentView, target: currentTarget };
+  currentAuthor = id;
+  $("author-id").textContent = id;
+  show("author");
+  await refreshAuthor();
+}
+
+async function refreshAuthor() {
+  clearNotices("author-error");
+  try {
+    const view = await invoke("get_feedback", { target: currentAuthor });
+    const comments = $("author-comments");
+    comments.replaceChildren();
+    for (const c of view.comments) comments.appendChild(commentLi(c));
+    if (view.comments.length === 0) comments.appendChild(itemLi("No notes yet."));
+  } catch (e) {
+    flash("author-error", String(e));
+  }
+}
+
+async function publishAuthorNote(text) {
+  clearNotices("author-error", "author-ok");
+  try {
+    await invoke("publish", { target: currentAuthor, contribution: { kind: "comment", text }, license: null });
+    await refreshAuthor();
+    flash("author-ok", "Published ✓");
+  } catch (e) {
+    flash("author-error", String(e));
   }
 }
 
@@ -349,7 +430,14 @@ async function drainPendingShare() {
 // ----------------------------------------------------------------- wiring
 
 window.addEventListener("DOMContentLoaded", () => {
-  $("nav-back").addEventListener("click", () => {
+  $("nav-back").addEventListener("click", async () => {
+    if (currentView === "author" && returnTo) {
+      const back = returnTo;
+      returnTo = null;
+      if (back.view === "feedback") await openFeedback(back.target);
+      else show(back.view);
+      return;
+    }
     if (currentView === "feedback" || currentView === "journal") refreshLater();
     show("home");
   });
@@ -400,6 +488,14 @@ window.addEventListener("DOMContentLoaded", () => {
     publishContribution({ kind: "tag", text });
   });
   // TODO(issue-type): wire c-issue-send once Body::Issue lands.
+
+  // Author
+  $("a-comment-send").addEventListener("click", () => {
+    const text = $("a-comment").value.trim();
+    if (!text) return flash("author-error", "Write a note first.");
+    $("a-comment").value = "";
+    publishAuthorNote(text);
+  });
 
   // Key
   $("key-export-btn").addEventListener("click", exportKey);

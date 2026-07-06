@@ -156,6 +156,25 @@ button.danger { color: var(--fb-danger); border-color: var(--fb-danger); backgro
 .items.tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .items.tags li { border-radius: 999px; padding: 0.15rem 0.7rem; font-size: 0.9rem; margin: 0; }
 
+/* A discreet, tappable author fingerprint next to a piece of feedback — a
+ * "same author?" glance that opens a view of that identity used as an
+ * ordinary feedback target. Mirrors .fb-fp in site/freedback.css. */
+button.fb-fp {
+  display: inline;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fb-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-decoration: none;
+  opacity: 0.75;
+  cursor: pointer;
+}
+button.fb-fp:hover,
+button.fb-fp:focus-visible { opacity: 1; text-decoration: underline; }
+
 .journal-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
 .journal-status { font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; background: var(--fb-soft); }
 .journal-status.deleted { color: var(--fb-danger); }

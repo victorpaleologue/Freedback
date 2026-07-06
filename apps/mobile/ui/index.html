@@ -106,6 +106,26 @@
       <p id="fb-ok" class="ok hidden"></p>
     </section>
 
+    <!-- ============================ Author ============================ -->
+    <section id="view-author" class="view hidden">
+      <p class="hint">Every piece of feedback carries its author's identity —
+        at minimum, their self-signed public key. This is a place for a short
+        note, not a public score: there's no leaderboard here.</p>
+      <p id="author-id" class="target mono"></p>
+
+      <h2>Notes</h2>
+      <ul id="author-comments" class="items"></ul>
+
+      <div class="composer card">
+        <div class="row">
+          <input id="a-comment" type="text" placeholder="Leave a note…" />
+          <button id="a-comment-send" class="primary">Send</button>
+        </div>
+      </div>
+      <p id="author-error" class="error hidden"></p>
+      <p id="author-ok" class="ok hidden"></p>
+    </section>
+
     <!-- ========================= My feedback ========================= -->
     <section id="view-journal" class="view hidden">
       <p class="hint">Everything you published from this device. Update
