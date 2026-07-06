@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    # main only: every PR push already runs via the pull_request event, so a
+    # branches: ["**"] push trigger doubled every run (and the bill).
+    branches: [main]
     # The mobile app is its own excluded workspace with its own pipeline
     # (app-ci.yml) — keep this heavy workflow out of app-only changes.
     paths-ignore: ["apps/mobile/**"]
