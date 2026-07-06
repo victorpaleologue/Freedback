@@ -5,17 +5,6 @@ any upstream code, open the file in-repo and confirm its `LICENSE`** — the
 Mangrove JSDoc line numbers are stale and the Hypothesis anchoring functions
 were not confirmed to line level during research.
 
-## Origins
-
-### The original 2014 Freedback white book
-- The project's vision, strategy, target audiences, and most of its
-  principles (see [the White Book](white-book.md)) originate from a 2014
-  specification of the same name and idea, including its "Data Distribution
-  Policies" section (licensing requirement, ADR 0022) and its three feedback
-  kinds — `Comment`, `Rating`, `Issue` (the last ported forward as ADR 0023).
-  That original repository is no longer online; this project's own docs are
-  now the record of that heritage.
-
 ## Design & code provenance
 
 ### Mangrove (Open Reviews Association) — Apache-2.0

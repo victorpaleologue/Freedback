@@ -108,11 +108,3 @@ opt-in, text-only, and nowhere close to a public score.)
 **Using Freedback in Freedback.** We dogfood. The software we ship to collect
 feedback should itself collect feedback about the project. Using what we
 produce forces us to see it — and to be more critical about it.
-
-## Heritage
-
-Freedback has been brewing since 2014. This white book continues one written
-long before the current implementation — the vision, the strategy, the use
-cases, and most of these principles come from it, and still set this
-project's course. The technology changed (Web Annotations, SHACL, Rust,
-WASM); the battle cry did not.
