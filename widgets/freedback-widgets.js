@@ -427,6 +427,21 @@
     return path.split("/").filter(Boolean).pop() || null;
   }
 
+  /** A short, deterministic client-side fingerprint for an issuer id — a
+   *  "same author?" glance, NOT a cryptographic key fingerprint (it's a
+   *  32-bit FNV-1a hash of the id string, not the key material itself, so it
+   *  works identically for self-signed `urn:freedback:key:…` issuers and
+   *  OAuth `urn:freedback:oauth:…` ones without format-specific parsing). */
+  function fingerprint(id) {
+    if (!id) return "";
+    let h = 0x811c9dc5;
+    for (let i = 0; i < id.length; i++) {
+      h ^= id.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(16).padStart(8, "0");
+  }
+
   // --- canonical body builders (match the Rust BodyWire serialization) -----
   function starBody(value) {
     return {
@@ -555,6 +570,33 @@
     /** Whether a fetched annotation is the visitor's own (signed) feedback. */
     isOwn(ann) {
       return !!(this.ownerId && ann && ann.creator && ann.creator.id === this.ownerId);
+    }
+
+    /** A discreet fingerprint badge for `ann`'s author (issue: authors
+     *  deserve an identity IRI too — they at least have their public key,
+     *  namespaced under `urn:freedback:key:…`). With `data-author-href` set,
+     *  the badge links to a view of that identity used AS A TARGET: the same
+     *  read/publish mechanism as any other feedback, just pointed at the
+     *  author's own IRI instead of a product or page, so reviews "on" an
+     *  author are ordinary annotations, nothing new to build server-side.
+     *  Without the attribute the badge is inert text — still useful to spot
+     *  a repeat author in a list without offering a link nothing backs. */
+    authorBadge(ann) {
+      const id = ann && ann.creator && ann.creator.id;
+      if (!id) return null;
+      const base = this.getAttribute("data-author-href");
+      const el = document.createElement(base ? "a" : "span");
+      el.className = "fb-fp";
+      el.textContent = `#${fingerprint(id)}`;
+      el.title = id;
+      if (base) {
+        const params = new URLSearchParams({ id });
+        if (this.readBase) params.set("read", this.readBase);
+        if (this.publishUrl) params.set("publish", this.publishUrl);
+        const sep = base.includes("?") ? "&" : "?";
+        el.href = `${base}${sep}${params.toString()}`;
+      }
+      return el;
     }
 
     /** Erase one annotation by dedup id — the author's right to erasure
@@ -731,7 +773,9 @@
         const own = this.isOwn(ann) && this.canErase();
         for (const text of textBodies(ann, "commenting")) {
           const li = document.createElement("li");
-          li.textContent = text;
+          li.append(text);
+          const badge = this.authorBadge(ann);
+          if (badge) li.append(" ", badge);
           // The visitor's OWN comments get a delete control (ADR 0021).
           if (own) li.appendChild(this.deleteControl(dedupFromId(ann.id)));
           ul.appendChild(li);
@@ -772,7 +816,9 @@
         for (const text of textBodies(ann, "editing")) {
           const li = document.createElement("li");
           li.className = "fb-issue-item";
-          li.textContent = text;
+          li.append(text);
+          const badge = this.authorBadge(ann);
+          if (badge) li.append(" ", badge);
           // The visitor's OWN issue reports get a delete control (ADR 0021).
           if (own) li.appendChild(this.deleteControl(dedupFromId(ann.id)));
           ul.appendChild(li);
@@ -851,6 +897,7 @@
       deleteDocument,
       buildSignedDelete,
       dedupFromId,
+      fingerprint,
       getIdentity,
       // identity management (issue #27). The *Record helpers take an explicit
       // SubtleCrypto so they unit-test in Node without IndexedDB; the IndexedDB-

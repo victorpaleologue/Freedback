@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freedback — an author's feedback</title>
+  <meta name="description" content="Every Freedback author has an identity IRI — their public key. It's a target like any other, so feedback on it works the same way." />
+  <script src="/widgets/freedback-widgets.js"></script>
+  <script src="/author/author.js" defer></script>
+  <link rel="stylesheet" href="/freedback.css" />
+  <script src="/theme.js"></script>
+</head>
+<body>
+  <button class="fb-theme-toggle" data-fb-theme-toggle aria-label="Toggle light / dark theme"><span data-fb-theme-icon>🌙</span></button>
+  <main>
+  <h1>An author's feedback</h1>
+  <p class="sub">Every piece of feedback in Freedback carries its author's
+  identity IRI — at minimum, their self-signed public key. Everything with a
+  URI deserves feedback, including that. This is deliberately understated: a
+  place for a short note, not a public score. There's no leaderboard here.</p>
+
+  <p id="author-missing" role="alert" hidden>No author id given. Click the
+  fingerprint (<code>#a1b2c3d4</code>-style link) next to a piece of feedback
+  elsewhere on the site to get here.</p>
+
+  <div class="card" id="author-card" hidden>
+    <h3>Identity</h3>
+    <p class="uri"><code id="author-id"></code></p>
+    <p class="blurb">This is the author's own portable identity — the same
+    key that signs everything they publish. It isn't tied to any one server:
+    the same id would appear the same way anywhere else that indexes this
+    author's feedback.</p>
+    <h3>Leave a note</h3>
+    <div class="widgets" id="author-widgets"></div>
+  </div>
+
+  <p class="nav">
+    <a href="/">← Home</a> &nbsp;·&nbsp;
+    <a href="/demo/">Main widget showcase →</a>
+  </p>
+
+  <footer>
+    <p>Source &amp; docs: <a href="https://github.com/victorpaleologue/Freedback">github.com/victorpaleologue/Freedback</a> &nbsp;·&nbsp; <a href="/privacy/">Privacy</a></p>
+  </footer>
+  </main>
+</body>
+</html>

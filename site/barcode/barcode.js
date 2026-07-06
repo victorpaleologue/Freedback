@@ -139,6 +139,7 @@
     el.setAttribute("data-publish", LIVE_ANNOTATIONS);
     el.setAttribute("data-sign", ""); // presence = self-signed P-256 identity
     el.setAttribute("data-license", LICENSE);
+    el.setAttribute("data-author-href", "/author/");
     return el;
   }
 
