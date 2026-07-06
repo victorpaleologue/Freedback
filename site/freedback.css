@@ -330,3 +330,53 @@ a.fb-fp:focus-visible { opacity: 1; text-decoration: underline; }
 }
 .fb-issue textarea.fb-in { resize: vertical; font: inherit; }
 .fb-issue .fb-list li.fb-issue-item::before { content: "⚠ "; }
+
+/* ---- compiled docs (/docs/**, built from docs/*.md by docs-tools) --------- */
+/* The wrapper the doc compiler puts around rendered Markdown. Widens the column
+ * a touch (prose + tables + wide code fences) and gives the generated headings,
+ * tables, blockquotes and lists a readable rhythm using the site tokens. */
+main.doc { max-width: 52rem; }
+.doc-nav { margin: 0 0 1.5rem; font-size: 0.95rem; color: var(--fb-muted); }
+.doc h1 { font-size: 2rem; }
+.doc h2 { margin-top: 2.2rem; }
+.doc h3 { margin-top: 1.8rem; }
+.doc h4 { margin-top: 1.4rem; color: var(--fb-muted); }
+.doc p,
+.doc li { line-height: 1.65; }
+.doc ul,
+.doc ol { padding-left: 1.4rem; }
+.doc li { margin: 0.25rem 0; }
+.doc blockquote {
+  margin: 1rem 0;
+  padding: 0.35rem 0 0.35rem 1rem;
+  border-left: 3px solid var(--fb-line);
+  color: var(--fb-muted);
+}
+.doc blockquote p { margin: 0.4rem 0; }
+.doc hr { border: none; border-top: 1px solid var(--fb-line); margin: 2rem 0; }
+/* Tables scroll horizontally on narrow screens rather than break the layout. */
+.doc table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+  font-size: 0.92rem;
+  display: block;
+  overflow-x: auto;
+}
+.doc th,
+.doc td {
+  border: 1px solid var(--fb-line);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+.doc th { background: var(--fb-soft); }
+.doc img { max-width: 100%; }
+/* The docs index / ADR index listing. */
+.doc-list { list-style: none; padding: 0; }
+.doc-list li {
+  padding: 0.5rem 0.7rem;
+  background: var(--fb-soft);
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+}

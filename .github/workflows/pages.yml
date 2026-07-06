@@ -20,6 +20,10 @@ on:
       - "site/**"
       - "widgets/**"
       - "demo-react/**"
+      # The design docs are compiled to HTML at /docs/ (docs-tools/), so a docs
+      # or compiler change must rebuild the site.
+      - "docs/**"
+      - "docs-tools/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -95,6 +99,14 @@ jobs:
           # Custom domain: GitHub Pages reads this CNAME and provisions HTTPS once
           # the apex DNS points at the Pages IPs (see docs/deployment.md).
           echo 'freedback.net' > _site/CNAME
+      - name: Compile the design docs to HTML (served at /docs/)
+        # docs/**/*.md → _site/docs/**/*.html, wrapped in the site's look, with
+        # a browsable index + ADR listing. Isolated tiny package (just marked),
+        # so `npm ci` here is fast and independent of the React build above.
+        working-directory: docs-tools
+        run: |
+          npm ci
+          OUT="$GITHUB_WORKSPACE/_site/docs" node build-docs.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

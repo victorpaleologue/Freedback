@@ -8,30 +8,21 @@ annotation tooling can read it.
 
 ## The big picture
 
+```mermaid
+flowchart TB
+  core["<b>protocol-lib</b> (Rust)<br/>model · JCS dedup · P-256 · JSON-LD · SHACL<br/><i>(native + wasm32 core)</i>"]
+  core --> fb["<b>feedback-server</b><br/>WAP container + /sync"]
+  core --> disc["<b>discovery-server</b><br/>registry · /.well-known"]
+  core --> coll["<b>collection-server</b><br/>index · cache · equivalence"]
+  fb <-->|announce / resolve| disc
+  disc <--> coll
+  fb -->|store| store[("FeedbackStore<br/>Oxigraph (prod) · SQLite/memory (mock)")]
+  coll -->|index| agent["AI equivalence agent"]
 ```
-                         ┌──────────────────────────────────────┐
-                         │          protocol-lib (Rust)          │
-                         │  model · JCS dedup · P-256 · JSON-LD   │
-                         │  · SHACL   (native + wasm32 core)      │
-                         └───────────────┬──────────────────────┘
-            ┌────────────────────────────┼────────────────────────────┐
-            ▼                            ▼                            ▼
-   ┌────────────────┐          ┌──────────────────┐         ┌──────────────────┐
-   │ feedback-server│  announce│ discovery-server │ resolve │ collection-server│
-   │  (WAP container│◀────────▶│  (registry /     │◀───────▶│ (index · cache · │
-   │   + /sync)     │          │  .well-known)    │         │  equivalence)    │
-   └───────┬────────┘          └──────────────────┘         └────────┬─────────┘
-           │ store                                                    │ index
-           ▼                                                          ▼
-   ┌────────────────┐                                        ┌──────────────────┐
-   │  FeedbackStore │  Oxigraph (prod) · SQLite/memory (mock)│  AI equivalence  │
-   └────────────────┘                                        │     agent        │
-                                                             └──────────────────┘
 
-   clients: cli-client (native+wasm) · advanced-client (local sync copy)
-   surfaces: web widgets (JS) · Firefox extension (JS) · 3rd-party WA demo
-             · mobile app (Tauri 2 + Rust, Android-first)
-```
+**Clients:** `cli-client` (native + wasm) · `advanced-client` (local sync copy).
+**Surfaces:** web widgets (JS) · Firefox extension (JS) · 3rd-party WA demo ·
+mobile app (Tauri 2 + Rust, Android-first).
 
 ## Components and responsibilities
 

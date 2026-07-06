@@ -1,0 +1,13 @@
+{
+  "name": "freedback-docs-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build-time compiler that renders the docs/ Markdown into the freedback.net static site.",
+  "type": "module",
+  "scripts": {
+    "build": "node build-docs.mjs"
+  },
+  "dependencies": {
+    "marked": "15.0.6"
+  }
+}
