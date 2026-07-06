@@ -14,8 +14,13 @@
              MainActivity declares the freedback:// deep-link scheme, and MUST
              stay the FIRST <activity> element — the deep-link plugin's
              build.rs injects the configured intent-filters (the freedback
-             scheme + the https://freedback.net/l App Link) before the first
-             </activity> closing tag it finds. -->
+             scheme + the https://freedback.net/l App Link) before the
+             closing tag of the first activity element it finds. The
+             rewriter matches that closing tag as a plain per-line substring
+             (it is not a real XML parser), so this comment must never spell
+             the tag out (open-angle-bracket, slash, activity,
+             close-angle-bracket) — doing so would make the rewriter "find"
+             its target inside this comment instead and corrupt the file. -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"
