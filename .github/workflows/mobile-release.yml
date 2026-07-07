@@ -49,13 +49,16 @@ jobs:
           KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$KS" ] && [ -n "$KS_PASS" ] && [ -n "$ALIAS" ] && [ -n "$KEY_PASS" ]; then
+          # ANDROID_KEY_PASSWORD is NOT required: a single-password keystore
+          # (keytool/PKCS12 default) uses the keystore password for the key too,
+          # and the signing step falls back to it. Only the store, its password,
+          # and the alias are mandatory.
+          if [ -n "$KS" ] && [ -n "$KS_PASS" ] && [ -n "$ALIAS" ]; then
             echo "has_keys=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_keys=false" >> "$GITHUB_OUTPUT"
-            echo "ANDROID_* signing secrets are not (all) set — building UNSIGNED artifacts and skipping Release publishing."
+            echo "ANDROID_KEYSTORE_B64 / _PASSWORD / _KEY_ALIAS are not all set — building UNSIGNED artifacts and skipping Release publishing."
           fi
 
   # app-ci.yml triggers on push-to-main and PRs touching apps/mobile/**, NOT on
@@ -182,6 +185,9 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          # Single-password keystore: when no separate key password is set, the
+          # key password IS the keystore password.
+          KEY_PASS="${KEY_PASS:-$KS_PASS}"
           echo "$KS_B64" | base64 -d > keystore.jks
 
           apk_in="$(ls dist/*.apk | head -n1)"
