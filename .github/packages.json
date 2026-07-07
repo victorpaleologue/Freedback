@@ -1,0 +1,81 @@
+{
+  "$comment": "Single source of truth for Freedback's releasable packages. Consumed by .github/scripts/*.mjs, which power versions.yml (PR bump enforcement) and tag-and-release.yml (per-package tag + release on merge). Private tooling (docs-tools, demo-react, apps/mobile/e2e) is intentionally absent — it is not released. Each package is versioned, tagged, and released independently.",
+  "packages": [
+    {
+      "name": "protocol-lib",
+      "path": "crates/protocol-lib",
+      "manifest": "crates/protocol-lib/Cargo.toml",
+      "kind": "cargo",
+      "tagPrefix": "protocol-lib"
+    },
+    {
+      "name": "storage",
+      "path": "crates/storage",
+      "manifest": "crates/storage/Cargo.toml",
+      "kind": "cargo",
+      "tagPrefix": "storage"
+    },
+    {
+      "name": "feedback-server",
+      "path": "crates/feedback-server",
+      "manifest": "crates/feedback-server/Cargo.toml",
+      "kind": "cargo",
+      "tagPrefix": "feedback-server",
+      "bin": "freedback-feedback-server"
+    },
+    {
+      "name": "cli-client",
+      "path": "crates/cli-client",
+      "manifest": "crates/cli-client/Cargo.toml",
+      "kind": "cargo",
+      "tagPrefix": "cli-client",
+      "bin": "freedback"
+    },
+    {
+      "name": "discovery-server",
+      "path": "crates/discovery-server",
+      "manifest": "crates/discovery-server/Cargo.toml",
+      "kind": "cargo",
+      "tagPrefix": "discovery-server",
+      "bin": "freedback-discovery-server"
+    },
+    {
+      "name": "collection-server",
+      "path": "crates/collection-server",
+      "manifest": "crates/collection-server/Cargo.toml",
+      "kind": "cargo",
+      "tagPrefix": "collection-server",
+      "bin": "freedback-collection-server"
+    },
+    {
+      "name": "advanced-client",
+      "path": "crates/advanced-client",
+      "manifest": "crates/advanced-client/Cargo.toml",
+      "kind": "cargo",
+      "tagPrefix": "advanced-client",
+      "bin": "freedback-sync"
+    },
+    {
+      "name": "widgets",
+      "path": "widgets",
+      "manifest": "widgets/package.json",
+      "kind": "npm",
+      "tagPrefix": "widgets"
+    },
+    {
+      "name": "mobile",
+      "path": "apps/mobile",
+      "manifest": "apps/mobile/Cargo.toml",
+      "kind": "cargo-workspace",
+      "tagPrefix": "mobile",
+      "releaseWorkflow": "mobile-release.yml"
+    },
+    {
+      "name": "firefox-extension",
+      "path": "firefox-extension",
+      "manifest": "firefox-extension/manifest.json",
+      "kind": "json",
+      "tagPrefix": "firefox-extension"
+    }
+  ]
+}
