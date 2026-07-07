@@ -114,6 +114,14 @@ fn export_identity_qr(core: tauri::State<'_, Core>) -> Result<String, String> {
     core.export_identity_qr().map_err(ui_err)
 }
 
+/// Write the account key PEM to `path` (a real filesystem path the native
+/// Save dialog returned). The write happens in the core via `std::fs`, so no
+/// fs-plugin scope is involved.
+#[tauri::command]
+fn export_identity_to_file(core: tauri::State<'_, Core>, path: String) -> Result<(), String> {
+    core.export_identity_to_file(&path).map_err(ui_err)
+}
+
 #[tauri::command]
 fn get_settings(core: tauri::State<'_, Core>) -> Result<Settings, String> {
     Ok(core.settings())
@@ -159,7 +167,9 @@ fn handle_deep_link(app: &tauri::AppHandle, url: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_deep_link::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_dialog::init());
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
 
@@ -189,6 +199,7 @@ pub fn run() {
             export_identity,
             import_identity,
             export_identity_qr,
+            export_identity_to_file,
             get_settings,
             set_settings,
             should_nudge_key_backup,

@@ -153,12 +153,14 @@
         publish, edit, and erase as you — keep it private.</p>
 
       <h2>Export</h2>
-      <textarea id="key-export" class="mono" rows="6" readonly
-                placeholder="Tap Export to reveal your private key"></textarea>
+      <p class="hint">Save your key to a file (recommended), or copy it / scan
+        the QR code below to move it to another device.</p>
       <div class="row">
-        <button id="key-export-btn" class="secondary">Export</button>
+        <button id="key-export-btn" class="primary">Save key to file</button>
         <button id="key-copy-btn" class="secondary">Copy</button>
       </div>
+      <textarea id="key-export" class="mono" rows="6" readonly
+                placeholder="Tap Save key to file to also reveal your private key here"></textarea>
       <div id="key-qr" class="qr hidden"></div>
 
       <h2>Import</h2>

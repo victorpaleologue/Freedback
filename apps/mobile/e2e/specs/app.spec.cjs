@@ -4,10 +4,26 @@
 // manage "My feedback" → manage "My key" → settings.
 "use strict";
 
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
 const { SERVER_URL } = require("../harness.cjs");
 
 const GS1_NUTELLA = "https://id.gs1.org/01/03017620422003";
 const GS1_BOOK = "https://id.gs1.org/01/09780306406157";
+
+// The native Save dialog is an OS modal WebDriver can't drive, so stub
+// `dialog.save` in the webview. Default: return null (user cancelled), so
+// clicking Export just reveals the key without popping a real dialog. Tests
+// that exercise the file export override this to return a chosen path.
+async function stubSaveDialog(returnPath) {
+  await browser.execute((p) => {
+    window.__TAURI__ = window.__TAURI__ || {};
+    window.__TAURI__.dialog = window.__TAURI__.dialog || {};
+    window.__TAURI__.dialog.save = async () => p;
+  }, returnPath === undefined ? null : returnPath);
+}
 
 async function waitView(name) {
   await $(`#view-${name}`).waitForDisplayed();
@@ -37,6 +53,11 @@ async function publishOk() {
 }
 
 let exportedPem = null;
+
+before(async () => {
+  await waitView("home");
+  await stubSaveDialog(null); // default: Export reveals but doesn't save a file
+});
 
 describe("first run", () => {
   it("boots to the Home view", async () => {
@@ -245,6 +266,26 @@ describe("my key", () => {
     const error = await $("#key-error");
     await error.waitForDisplayed();
     await expect(error).toHaveText(expect.stringContaining("invalid key PEM"));
+  });
+
+  it("saves the key straight to a file via the native dialog", async () => {
+    // Stub the OS Save dialog to return a temp path, then Export writes the
+    // PEM there through the Rust core. The spec runs in Node, so we read the
+    // file back and assert it's the real key.
+    const dest = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "freedback-keyfile-")),
+      "freedback-identity.pem"
+    );
+    await stubSaveDialog(dest);
+    await $("#key-export-btn").click();
+    await browser.waitUntil(async () => (await $("#key-ok").isDisplayed()), {
+      timeoutMsg: "no save confirmation appeared",
+    });
+    await expect($("#key-ok")).toHaveText(expect.stringContaining("Saved your key"));
+    const written = fs.readFileSync(dest, "utf8");
+    expect(written).toContain("BEGIN PRIVATE KEY");
+    expect(written).toEqual(exportedPem);
+    await stubSaveDialog(null); // restore the default for later tests
   });
 
   it("re-imports the exported PEM (portable account)", async () => {

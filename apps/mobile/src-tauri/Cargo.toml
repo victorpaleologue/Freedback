@@ -25,6 +25,11 @@ tauri-build = { version = "2", features = [] }
 freedback-app-core = { path = "../core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-deep-link = "2"
+# Native "Save As" dialog for the file export of the account key (issue #64
+# M3). Cross-platform (desktop + mobile), so no target gating and the desktop
+# e2e can drive it. We only need the picker — the write itself happens in the
+# Rust core (`export_identity_to_file`), which sidesteps fs-plugin scoping.
+tauri-plugin-dialog = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 # One-shot current-thread runtimes for the (non-Send) core futures — see
