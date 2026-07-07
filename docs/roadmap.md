@@ -187,14 +187,16 @@ shapes at stable `/ns/*` URLs (+ landing page). See `docs/deployment.md`.
   release artifacts; rustls everywhere → no OpenSSL); the **durable RocksDB
   backend** as an opt-in `rocksdb` feature (`OxigraphStore::open`, selected via
   `FREEDBACK_ROCKSDB_PATH`, `--build-arg FEEDBACK_FEATURES=rocksdb`); and a
-  **tagged release pipeline** (`release.yml`: `v*` tag → musl binaries + wasm
-  package on the GitHub Release). **Still external/deferred:** the
-  `freedback.net` Pages custom domain (pending registrar — see `docs/naming.md`).
+  **per-package release pipeline** (`tag-and-release.yml`: each package tagged +
+  released independently on merge — see `docs/deployment.md`). **Still
+  external/deferred:** the `freedback.net` Pages custom domain (pending registrar
+  — see `docs/naming.md`).
 
 ## Cross-cutting issues
 - **CI** ✅ — fmt, clippy, native test, wasm32 build, `x86_64-linux-musl` static
-  build, widgets unit + headless E2E, ontology parse checks; `release.yml`
-  publishes musl + wasm artifacts on tags.
+  build, widgets unit + headless E2E, ontology parse checks (only the suites a
+  change touches actually run); `tag-and-release.yml` releases each package
+  independently on merge.
 - **Test harness** — `TestCluster` (in-process axum apps on ephemeral ports);
   deterministic fixed keypairs + timestamps. (Lands with M5.)
 - **JSON-LD ingest** ✅ — **primary**, not interop: `protocol-lib::jsonld`
