@@ -117,49 +117,26 @@ The `changes` job in `ci.yml` also uses the package layout to run **only the
 suites affected by a change** (a docs- or ontology-only PR skips the Rust and
 browser matrices).
 
-### Aggregate binary bundle (legacy / manual)
-
-`.github/workflows/release.yml` still exists for a **manual** all-in-one build
-of the static binaries + the wasm bundle. It fires on a plain `v<semver>` tag
-(which the per-package automation never creates) or `workflow_dispatch`:
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-It attaches to the GitHub Release for the tag:
-
-- **`freedback-<tag>-x86_64-linux-musl.tar.gz`** — fully static
-  `x86_64-unknown-linux-musl` binaries (all five executables: the three servers,
-  the `freedback` CLI, and `freedback-sync`), built with **`cargo-zigbuild`**
-  (zig as the C cross-compiler for `ring`). No glibc, no OpenSSL (rustls), no
-  RocksDB — runs on any x86-64 Linux.
-- **`freedback-wasm-<tag>.tar.gz`** — the `wasm32-unknown-unknown` build of the
-  protocol core + cli-client, bundled with the pinned ontology.
-
-Each archive ships a `.sha256`. `workflow_dispatch` builds the artifacts without
-publishing a Release (smoke test).
-
-**Gated on CI:** `ci.yml` only triggers on pushes/PRs to `main`, not on tag
-pushes, so a `verify-ci` job checks that `ci.yml`'s most recent run for the
-exact tagged commit succeeded before the `publish`/`publish-npm-widgets` jobs
-run — a tag cut from a commit that never ran CI (or ran it red) fails the
-release instead of publishing anyway. Cut tags from a `main` commit that has
-already gone green.
+The binary crates' Releases each carry a fully static
+`x86_64-unknown-linux-musl` binary (built with **`cargo-zigbuild`** — zig as the
+C cross-compiler for `ring`; no glibc, no OpenSSL, no RocksDB, runs on any
+x86-64 Linux) plus its `.sha256`. Library crates and the extension get a
+notes-only Release. (There is no aggregate all-in-one bundle any more — each
+package ships on its own tag.)
 
 ### Publishing `@freedback/widgets` to npm (guarded)
 
-The same `release.yml` has a **`publish-npm-widgets`** job that, on a `vN` tag,
-publishes the drop-in widgets as **[`@freedback/widgets`](https://www.npmjs.com/package/@freedback/widgets)**
-(the scope reserved in `docs/naming.md`) so React/any apps can
-`npm add @freedback/widgets`. The job builds the ESM + UMD bundles and the
-bundled `.d.ts` from the canonical `widgets/freedback-widgets.js` via the
-package's `prepublishOnly` hook, then `npm publish --access public`.
+`tag-and-release.yml` publishes the drop-in widgets as
+**[`@freedback/widgets`](https://www.npmjs.com/package/@freedback/widgets)** (the
+scope reserved in `docs/naming.md`) as part of the `widgets` package's release,
+so React/any apps can `npm add @freedback/widgets`. It builds the ESM + UMD
+bundles and the bundled `.d.ts` from the canonical `widgets/freedback-widgets.js`
+via the package's `prepublishOnly` hook, then `npm publish --access public`.
 
-It is **guarded**: it runs only when an `NPM_TOKEN` repo secret is present
-(`if: secrets.NPM_TOKEN != ''`). Until the owner enables it, the job is **skipped
-cleanly** and never fails the release. To turn it on (one-time, **outside the
-repo**):
+It is **guarded**: it runs only when an `NPM_TOKEN` repo secret is present.
+Until the owner enables it, the step is **skipped cleanly** — the tag + GitHub
+Release still go out, just no npm publish. To turn it on (one-time, **outside
+the repo**):
 
 1. **Create the `@freedback` npm org/scope** at <https://www.npmjs.com/org/create>
    (or reserve the scope under your user). The package name `@freedback/widgets`
@@ -171,9 +148,9 @@ repo**):
 3. **Add it as a repo secret** named **`NPM_TOKEN`** (GitHub → Settings →
    Secrets and variables → Actions → New repository secret).
 
-Then any `git tag vX.Y.Z && git push origin vX.Y.Z` publishes the widgets at that
-version. npm rejects re-publishing an already-published version, so bump the
-workspace version before re-tagging. The `<script>`/CDN path
+Then bumping `widgets`'s version and merging publishes it at that version. npm
+rejects re-publishing an already-published version, so the version must be new
+(the bump-on-touch gate enforces that). The `<script>`/CDN path
 (`https://freedback.net/widgets/freedback-widgets.js`, served by Pages) keeps
 working independently of npm.
 
@@ -223,9 +200,10 @@ These steps are **outside the repo** and must be done by the domain owner:
 - `container.yml` — builds this image (on deploy-config / lockfile changes or on
   demand), so the Dockerfile can't silently rot.
 - `pages.yml` — publishes the static artifacts from `main`.
-- `release.yml` — on a `v*` tag, publishes the musl binaries + wasm package to
-  the GitHub Release, and (guarded on `NPM_TOKEN`) publishes `@freedback/widgets`
-  to npm. Publishing is gated on `ci.yml` having succeeded for the tagged commit.
+- `versions.yml` — PR gate: a package touched without a version bump fails.
+- `tag-and-release.yml` — on merge to `main`, tags + releases each package whose
+  version is new (per-package musl binary, notes, or npm publish), and dispatches
+  the mobile release. See "Per-package releases" above.
 - `app-ci.yml` / `mobile-release.yml` — the mobile app's own CI and release
   pipeline (`apps/mobile/README.md`); `mobile-release.yml`'s Release publish is
-  likewise gated on `app-ci.yml` having succeeded for the tagged commit.
+  gated on `app-ci.yml` having succeeded for the released commit.

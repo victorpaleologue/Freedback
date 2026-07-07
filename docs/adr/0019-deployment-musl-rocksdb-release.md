@@ -1,11 +1,16 @@
 # ADR 0019 — Deployment: musl static binaries, RocksDB durable backend, release pipeline
 
-- **Status:** accepted
+- **Status:** accepted (release-pipeline portion superseded)
 - **Date:** 2026-06-21
 - **Closes (partially):** issue #11 (M10 deployment). Core image/compose/Pages
   landed earlier (`191d210`); this covers the deferred build/release/durable
   pieces.
 - **Builds on:** ADR 0008 (snapshot persistence), ADR 0005 (storage trait).
+- **Update:** the monolithic `release.yml` (`v*` tag → aggregate musl + wasm
+  bundle) described below was later replaced by **per-package** tag-and-release
+  (`.github/packages.json` + `tag-and-release.yml`): each crate/package is now
+  versioned, tagged, and released independently on merge. The musl build recipe
+  and rationale here still apply per binary crate. See `docs/deployment.md`.
 
 ## Context
 
