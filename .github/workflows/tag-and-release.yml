@@ -103,6 +103,31 @@ jobs:
           (cd dist && sha256sum *.tar.gz > "${name}.sha256")
           ls -l dist
 
+      # --- npm package: build the exact publishable tarball --------------
+      # `npm pack` produces the same artifact `npm publish` would upload (dist
+      # bundles + source + types, per the package's `files`/prepublishOnly). We
+      # attach it to the GitHub Release so the package is downloadable + install-
+      # able (`npm install ./<tarball>.tgz`) even when NPM_TOKEN isn't set and we
+      # never push to the public registry.
+      - uses: actions/setup-node@v4
+        if: ${{ matrix.package.kind == 'npm' }}
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Pack the npm package
+        if: ${{ matrix.package.kind == 'npm' }}
+        working-directory: ${{ matrix.package.path }}
+        run: |
+          npm ci
+          # Test, then pack. `npm pack` runs the package's `prepack` hook, which
+          # builds the dist bundles; running the tests first keeps even the
+          # no-token (attach-only) path from shipping a red widget.
+          npm test
+          tarball="$(npm pack | tail -n1)"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          mv "$tarball" "$GITHUB_WORKSPACE/dist/"
+          ls -l "$GITHUB_WORKSPACE/dist"
+
       # --- create the tag + GitHub Release --------------------------------
       - name: Create the release
         if: ${{ matrix.package.kind != 'cargo-workspace' }}
@@ -116,11 +141,6 @@ jobs:
             $assets
 
       # --- npm publish for the widgets package (guarded) ------------------
-      - uses: actions/setup-node@v4
-        if: ${{ matrix.package.kind == 'npm' }}
-        with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
       - name: Publish to npm
         if: ${{ matrix.package.kind == 'npm' }}
         working-directory: ${{ matrix.package.path }}
@@ -128,8 +148,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "NPM_TOKEN not set — skipping npm publish (the tag + GitHub Release still went out)."
+            echo "NPM_TOKEN not set — skipping the registry publish. The tag + GitHub Release (with the packed tarball attached) still went out."
             exit 0
           fi
-          npm ci
           npm publish --access public
