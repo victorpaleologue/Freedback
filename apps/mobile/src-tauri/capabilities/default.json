@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core events + the deep-link read API.",
+  "description": "The main window: core events, the deep-link read API, and the native Save dialog for the key file export.",
   "windows": ["main"],
-  "permissions": ["core:default", "deep-link:default"]
+  "permissions": ["core:default", "deep-link:default", "dialog:allow-save"]
 }

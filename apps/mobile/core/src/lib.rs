@@ -21,7 +21,7 @@ pub mod input;
 pub mod journal;
 pub mod share;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use freedback_cli_client::{
@@ -186,6 +186,16 @@ impl AppCore {
         let pem = self.export_identity()?;
         let code = qrcode::QrCode::new(pem.as_bytes()).map_err(|e| CoreError::Qr(e.to_string()))?;
         Ok(code.render::<qrcode::render::svg::Color>().build())
+    }
+
+    /// Write the account key PEM straight to `path` (the "file export" the
+    /// native Save dialog picks). Backs the key up, so it clears the nudge —
+    /// same as the other export paths. Writing goes through `std::fs` here (no
+    /// filesystem-scope plumbing needed), so `path` must be a real filesystem
+    /// path, which is what the desktop dialog returns.
+    pub fn export_identity_to_file(&self, path: impl AsRef<Path>) -> Result<()> {
+        let pem = self.export_identity()?;
+        std::fs::write(path.as_ref(), pem).map_err(|e| CoreError::Io(e.to_string()))
     }
 
     /// Import (and persist) an account key from PKCS#8 PEM, replacing the
@@ -462,6 +472,25 @@ mod tests {
         assert!(svg.starts_with("<?xml"), "standalone SVG: {svg}");
         assert!(svg.contains("<svg"));
         // Exporting via the QR path backs up the key just like plain export.
+        assert!(!core.should_nudge_key_backup().unwrap());
+    }
+
+    #[test]
+    fn export_identity_to_file_writes_the_pem_and_backs_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = AppCore::open(dir.path()).unwrap();
+        let dest = dir.path().join("freedback-identity.pem");
+
+        core.export_identity_to_file(&dest).unwrap();
+
+        let written = std::fs::read_to_string(&dest).unwrap();
+        assert!(
+            written.contains("BEGIN PRIVATE KEY"),
+            "PKCS#8 PEM: {written}"
+        );
+        // The file holds exactly the account key.
+        assert_eq!(written, core.export_identity().unwrap());
+        // Saving a file backs the key up, clearing the nudge.
         assert!(!core.should_nudge_key_backup().unwrap());
     }
 }

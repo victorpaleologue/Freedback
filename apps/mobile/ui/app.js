@@ -431,11 +431,27 @@ function starSelect() {
 
 async function exportKey() {
   clearNotices("key-error", "key-ok");
+  const dialog = window.__TAURI__ && window.__TAURI__.dialog;
   try {
+    // Primary action: save the key straight to a file via the native dialog.
+    let savedPath = null;
+    if (dialog && dialog.save) {
+      const path = await dialog.save({
+        defaultPath: "freedback-identity.pem",
+        filters: [{ name: "Freedback key (PEM)", extensions: ["pem"] }],
+      });
+      if (path) {
+        await invoke("export_identity_to_file", { path });
+        savedPath = path;
+      }
+    }
+    // Also reveal the PEM + QR, so copy-paste and scan stay available as
+    // backups (the QR is scannable by another device's camera).
     $("key-export").value = await invoke("export_identity");
     const qr = $("key-qr");
     qr.innerHTML = await invoke("export_identity_qr");
     qr.classList.remove("hidden");
+    if (savedPath) flash("key-ok", `Saved your key to ${savedPath}`);
   } catch (e) {
     flash("key-error", String(e));
   }
