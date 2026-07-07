@@ -56,6 +56,8 @@ pub enum CoreError {
     Json(#[from] serde_json::Error),
     #[error("io: {0}")]
     Io(String),
+    #[error("qr: {0}")]
+    Qr(String),
     #[error("no journal entry with id {0}")]
     UnknownEntry(String),
     #[error("cannot {action} a {status} journal entry")]
@@ -79,15 +81,26 @@ pub type Result<T> = std::result::Result<T, CoreError>;
 pub struct Settings {
     /// Base URL of the feedback server (publication + collection point).
     pub server_url: String,
+    /// Whether the account key currently on this device has ever been
+    /// exported (the "back up your key" nudge, issue #64 M3). Defaults to
+    /// `false` for settings files written before this field existed.
+    #[serde(default)]
+    pub key_backed_up: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             server_url: DEFAULT_SERVER.to_string(),
+            key_backed_up: false,
         }
     }
 }
+
+/// Nudge the user to back up their key after this many local publishes,
+/// until they do (issue #64: "persistent nudge... after the first few
+/// posts").
+const BACKUP_NUDGE_THRESHOLD: usize = 3;
 
 /// The application core: one instance per app, owned by the Tauri shell (or a
 /// test). Everything hangs off a single data directory:
@@ -157,16 +170,57 @@ impl AppCore {
 
     /// Export the account key as PKCS#8 PEM, minting it first if this is the
     /// first use (the key IS the account — there is nothing else to sign up).
+    /// Revealing the key this way IS backing it up, so it clears the backup
+    /// nudge.
     pub fn export_identity(&self) -> Result<String> {
         let id = self.identity.load_or_create()?;
-        Ok(id.to_pkcs8_pem()?)
+        let pem = id.to_pkcs8_pem()?;
+        self.mark_key_backed_up()?;
+        Ok(pem)
+    }
+
+    /// The account key PEM, as a scannable QR code (standalone SVG markup).
+    /// The other half of "show as QR code + PEM file" (issue #64 M3) — import
+    /// is scanning this with the camera (mobile-only, `tauri-plugin-barcode-scanner`).
+    pub fn export_identity_qr(&self) -> Result<String> {
+        let pem = self.export_identity()?;
+        let code = qrcode::QrCode::new(pem.as_bytes()).map_err(|e| CoreError::Qr(e.to_string()))?;
+        Ok(code.render::<qrcode::render::svg::Color>().build())
     }
 
     /// Import (and persist) an account key from PKCS#8 PEM, replacing the
-    /// current one. Returns the imported key's issuer id.
+    /// current one. Returns the imported key's issuer id. The newly-active
+    /// key hasn't been backed up from THIS device yet, so this re-arms the
+    /// nudge.
     pub fn import_identity(&self, pem: &str) -> Result<String> {
         let id = self.identity.import_pem(pem)?;
+        let updated = {
+            let mut s = self.settings.lock().unwrap();
+            s.key_backed_up = false;
+            s.clone()
+        };
+        save_settings(&self.dir, &updated)?;
         Ok(id.issuer_id()?)
+    }
+
+    /// Mark the current account key as backed up, clearing the nudge.
+    fn mark_key_backed_up(&self) -> Result<()> {
+        let updated = {
+            let mut s = self.settings.lock().unwrap();
+            s.key_backed_up = true;
+            s.clone()
+        };
+        save_settings(&self.dir, &updated)
+    }
+
+    /// Whether to show the "back up your key" nudge: the key hasn't been
+    /// exported yet and the user has published enough that losing it would
+    /// actually cost them something.
+    pub fn should_nudge_key_backup(&self) -> Result<bool> {
+        if self.settings().key_backed_up {
+            return Ok(false);
+        }
+        Ok(self.journal.list()?.len() >= BACKUP_NUDGE_THRESHOLD)
     }
 
     /// The current issuer id (mints the key on first use).
@@ -398,5 +452,16 @@ mod tests {
     #[test]
     fn settings_default_points_at_the_demo_server() {
         assert_eq!(Settings::default().server_url, DEFAULT_SERVER);
+    }
+
+    #[test]
+    fn export_identity_qr_encodes_the_same_pem_as_a_scannable_svg() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = AppCore::open(dir.path()).unwrap();
+        let svg = core.export_identity_qr().unwrap();
+        assert!(svg.starts_with("<?xml"), "standalone SVG: {svg}");
+        assert!(svg.contains("<svg"));
+        // Exporting via the QR path backs up the key just like plain export.
+        assert!(!core.should_nudge_key_backup().unwrap());
     }
 }

@@ -14,9 +14,6 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_LICENSE: &str = "https://creativecommons.org/licenses/by/4.0/";
 
 /// What the user contributes from the composer.
-// TODO(issue-type): add `Issue { text: String }` mapping to the
-// `freedback:IssueReport` body (branch claude/issue-type) once it lands in
-// freedback-protocol; until then the app exposes stars / thumb / comment / tag.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Contribution {
@@ -28,6 +25,8 @@ pub enum Contribution {
     Comment { text: String },
     /// A single tag.
     Tag { text: String },
+    /// An issue / problem report (`oa:editing`, ADR 0023).
+    Issue { text: String },
 }
 
 impl Contribution {
@@ -38,6 +37,7 @@ impl Contribution {
             Contribution::Thumb { .. } => "thumb",
             Contribution::Comment { .. } => "comment",
             Contribution::Tag { .. } => "tag",
+            Contribution::Issue { .. } => "issue",
         }
     }
 
@@ -47,7 +47,9 @@ impl Contribution {
             Contribution::Stars { value } => format!("★ {value}"),
             Contribution::Thumb { up: true } => "👍".to_string(),
             Contribution::Thumb { up: false } => "👎".to_string(),
-            Contribution::Comment { text } | Contribution::Tag { text } => truncate(text, 80),
+            Contribution::Comment { text }
+            | Contribution::Tag { text }
+            | Contribution::Issue { text } => truncate(text, 80),
         }
     }
 
@@ -57,6 +59,7 @@ impl Contribution {
             Contribution::Stars { .. } | Contribution::Thumb { .. } => Motivation::Assessing,
             Contribution::Comment { .. } => Motivation::Commenting,
             Contribution::Tag { .. } => Motivation::Tagging,
+            Contribution::Issue { .. } => Motivation::Editing,
         }
     }
 
@@ -71,6 +74,7 @@ impl Contribution {
             Contribution::Tag { text } => Body::Tag {
                 value: text.clone(),
             },
+            Contribution::Issue { text } => Body::issue(text.clone()),
         }
     }
 }
@@ -301,6 +305,21 @@ mod tests {
             Motivation::Tagging
         );
         assert_eq!(Contribution::Stars { value: 4.0 }.kind_name(), "stars");
+        assert_eq!(
+            Contribution::Issue {
+                text: "broken link".into()
+            }
+            .body(),
+            Body::issue("broken link")
+        );
+        assert_eq!(
+            Contribution::Issue { text: "x".into() }.motivation(),
+            Motivation::Editing
+        );
+        assert_eq!(
+            Contribution::Issue { text: "x".into() }.kind_name(),
+            "issue"
+        );
     }
 
     #[test]
@@ -324,5 +343,33 @@ mod tests {
                 text: "hello".into()
             }
         );
+        let c: Contribution =
+            serde_json::from_str(r#"{"kind":"issue","text":"broken link"}"#).unwrap();
+        assert_eq!(
+            c,
+            Contribution::Issue {
+                text: "broken link".into()
+            }
+        );
+    }
+
+    #[test]
+    fn issues_are_chronological_and_aggregated() {
+        let anns = vec![
+            ann(
+                Body::issue("second issue"),
+                Motivation::Editing,
+                "2026-07-02T10:00:00Z",
+            ),
+            ann(
+                Body::issue("first issue"),
+                Motivation::Editing,
+                "2026-07-01T10:00:00Z",
+            ),
+        ];
+        let view = aggregate(TARGET, &anns);
+        let texts: Vec<_> = view.issues.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(texts, vec!["first issue", "second issue"]);
+        assert_eq!(view.total, 2);
     }
 }

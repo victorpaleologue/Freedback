@@ -31,3 +31,10 @@ serde_json = { workspace = true }
 # `run_core` in src/lib.rs. The full feature set is already in the graph via
 # reqwest; listing what we use keeps intent clear.
 tokio = { version = "1", features = ["rt", "net", "time"] }
+
+# Mobile-only (its crate root is `#![cfg(mobile)]` — it doesn't even compile
+# for desktop), so it's a target-specific dependency: the desktop build (the
+# primary e2e tier, `e2e/`) must stay unaffected. `scanning_supported()` in
+# `src/lib.rs` tells the UI whether to enable the Scan button.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"

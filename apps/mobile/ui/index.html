@@ -16,6 +16,12 @@
 
     <!-- ============================ Home ============================ -->
     <section id="view-home" class="view">
+      <div id="backup-nudge" class="hint warn hidden">
+        <span>You've published a few things — back up your key so you never
+          lose the ability to update or erase them.</span>
+        <button id="backup-nudge-btn" class="secondary">Back up now</button>
+      </div>
+
       <p class="hint">Scan or enter a barcode (GTIN), an ISBN, or a URL to see
         and share feedback about anything.</p>
 
@@ -26,9 +32,11 @@
       </form>
       <p id="resolve-error" class="error hidden"></p>
 
-      <!-- Camera scanning lands with the barcode-scanner plugin (M3). -->
+      <!-- tauri-plugin-barcode-scanner is mobile-only (Android/iOS) — it
+           doesn't compile for desktop at all, so this stays disabled there;
+           app.js enables it once `scanning_supported` confirms mobile. -->
       <button id="scan-btn" class="secondary" disabled
-              title="Camera scanning arrives with the barcode-scanner plugin">
+              title="Camera scanning is only available in the Android/iOS app">
         Scan (soon)
       </button>
 
@@ -60,6 +68,9 @@
           <span id="fb-thumbs-down">👎 0</span>
         </div>
       </div>
+
+      <h2>Issues</h2>
+      <ul id="fb-issues" class="items issues"></ul>
 
       <h2>Comments</h2>
       <ul id="fb-comments" class="items"></ul>
@@ -96,10 +107,8 @@
           <button id="c-tag-send" class="primary">Tag</button>
         </div>
         <div class="row">
-          <!-- TODO(issue-type): enable once Body::Issue lands in the protocol. -->
-          <input id="c-issue" type="text" placeholder="Report an issue… (soon)" disabled />
-          <button id="c-issue-send" class="primary" disabled
-                  title="Issue reports arrive with the issue-type protocol extension">Issue</button>
+          <input id="c-issue" type="text" placeholder="Report an issue…" />
+          <button id="c-issue-send" class="primary">Report</button>
         </div>
       </div>
       <p id="fb-error" class="error hidden"></p>
@@ -150,6 +159,7 @@
         <button id="key-export-btn" class="secondary">Export</button>
         <button id="key-copy-btn" class="secondary">Copy</button>
       </div>
+      <div id="key-qr" class="qr hidden"></div>
 
       <h2>Import</h2>
       <p class="hint warn">Importing replaces the key on this device. Feedback
@@ -159,6 +169,10 @@
                 placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
       <div class="row">
         <button id="key-import-btn" class="primary">Import</button>
+        <button id="key-scan-btn" class="secondary" disabled
+                title="Scanning a QR key is only available in the Android/iOS app">
+          Scan QR (soon)
+        </button>
       </div>
       <p id="key-error" class="error hidden"></p>
       <p id="key-ok" class="ok hidden"></p>

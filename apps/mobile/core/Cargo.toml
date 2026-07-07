@@ -24,6 +24,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
+# QR export of the account key PEM (issue #64 M3: "show as QR code + PEM
+# file"). SVG-only — the `image` feature (raster + the `image` crate) is off,
+# keeping this pure-Rust and dependency-light.
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 [dev-dependencies]
 # In-process feedback server + in-memory store for the UX-path e2e tests,

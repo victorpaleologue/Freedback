@@ -107,6 +107,15 @@ function commentLi(item) {
 
 // ----------------------------------------------------------------- home
 
+async function checkBackupNudge() {
+  try {
+    const shouldNudge = await invoke("should_nudge_key_backup");
+    $("backup-nudge").classList.toggle("hidden", !shouldNudge);
+  } catch (e) {
+    console.error("backup nudge check", e);
+  }
+}
+
 async function lookUp(raw) {
   clearNotices("resolve-error");
   try {
@@ -114,6 +123,73 @@ async function lookUp(raw) {
     await openFeedback(resolved.uri);
   } catch (e) {
     flash("resolve-error", String(e));
+  }
+}
+
+// tauri-plugin-barcode-scanner is mobile-only — its commands only exist when
+// `scanning_supported` (a Rust `cfg!(mobile)` check) says so; on desktop this
+// leaves the button disabled rather than calling a command that can't exist.
+const SCAN_FORMATS = ["QR_CODE", "EAN_13", "EAN_8", "UPC_A", "UPC_E", "CODE_128"];
+
+async function initScan() {
+  try {
+    const supported = await invoke("scanning_supported");
+    if (!supported) return;
+    const btn = $("scan-btn");
+    btn.disabled = false;
+    btn.title = "";
+    btn.textContent = "Scan";
+  } catch (e) {
+    console.error("scan support check", e);
+  }
+}
+
+async function scanBarcode() {
+  clearNotices("resolve-error");
+  try {
+    let perm = await invoke("plugin:barcode-scanner|check_permissions");
+    if (perm.camera !== "granted") {
+      perm = await invoke("plugin:barcode-scanner|request_permissions");
+    }
+    if (perm.camera !== "granted") {
+      return flash("resolve-error", "Camera permission is needed to scan.");
+    }
+    const result = await invoke("plugin:barcode-scanner|scan", { formats: SCAN_FORMATS });
+    if (result && result.content) await lookUp(result.content);
+  } catch (e) {
+    flash("resolve-error", String(e));
+  }
+}
+
+async function initKeyScan() {
+  try {
+    const supported = await invoke("scanning_supported");
+    if (!supported) return;
+    const btn = $("key-scan-btn");
+    btn.disabled = false;
+    btn.title = "";
+    btn.textContent = "Scan QR to import";
+  } catch (e) {
+    console.error("scan support check", e);
+  }
+}
+
+// Scanning only fills the textarea — importing still goes through the same
+// explicit two-step confirm as pasting one in by hand.
+async function scanKeyQr() {
+  clearNotices("key-error", "key-ok");
+  try {
+    let perm = await invoke("plugin:barcode-scanner|check_permissions");
+    if (perm.camera !== "granted") {
+      perm = await invoke("plugin:barcode-scanner|request_permissions");
+    }
+    if (perm.camera !== "granted") {
+      return flash("key-error", "Camera permission is needed to scan.");
+    }
+    const result = await invoke("plugin:barcode-scanner|scan", { formats: ["QR_CODE"] });
+    if (result && result.content) $("key-import").value = result.content;
+  } catch (e) {
+    flash("key-error", String(e));
   }
 }
 
@@ -137,6 +213,11 @@ async function refreshFeedback() {
     $("fb-thumbs-up").textContent = `👍 ${view.thumbs_up}`;
     $("fb-thumbs-down").textContent = `👎 ${view.thumbs_down}`;
 
+    const issues = $("fb-issues");
+    issues.replaceChildren();
+    for (const i of view.issues) issues.appendChild(commentLi(i));
+    if (view.issues.length === 0) issues.appendChild(itemLi("No issues reported."));
+
     const comments = $("fb-comments");
     comments.replaceChildren();
     for (const c of view.comments) comments.appendChild(commentLi(c));
@@ -146,7 +227,6 @@ async function refreshFeedback() {
     tags.replaceChildren();
     for (const t of view.tags) tags.appendChild(itemLi(t.text));
     if (view.tags.length === 0) tags.appendChild(itemLi("No tags yet."));
-    // TODO(issue-type): render view.issues once the protocol grows Body::Issue.
   } catch (e) {
     flash("fb-error", String(e));
   }
@@ -353,6 +433,9 @@ async function exportKey() {
   clearNotices("key-error", "key-ok");
   try {
     $("key-export").value = await invoke("export_identity");
+    const qr = $("key-qr");
+    qr.innerHTML = await invoke("export_identity_qr");
+    qr.classList.remove("hidden");
   } catch (e) {
     flash("key-error", String(e));
   }
@@ -440,6 +523,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     if (currentView === "feedback" || currentView === "journal") refreshLater();
     show("home");
+    checkBackupNudge();
   });
 
   // Home
@@ -448,6 +532,8 @@ window.addEventListener("DOMContentLoaded", () => {
     const raw = $("resolve-input").value.trim();
     if (raw) lookUp(raw);
   });
+  $("scan-btn").addEventListener("click", scanBarcode);
+  initScan();
   for (const chip of document.querySelectorAll("#example-chips .chip")) {
     chip.addEventListener("click", () => {
       $("resolve-input").value = chip.dataset.example;
@@ -460,6 +546,8 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   $("nav-key").addEventListener("click", () => {
     $("key-export").value = "";
+    $("key-qr").classList.add("hidden");
+    $("key-qr").innerHTML = "";
     show("key");
   });
   $("nav-settings").addEventListener("click", async () => {
@@ -487,7 +575,12 @@ window.addEventListener("DOMContentLoaded", () => {
     $("c-tag").value = "";
     publishContribution({ kind: "tag", text });
   });
-  // TODO(issue-type): wire c-issue-send once Body::Issue lands.
+  $("c-issue-send").addEventListener("click", () => {
+    const text = $("c-issue").value.trim();
+    if (!text) return flash("fb-error", "Describe the issue first.");
+    $("c-issue").value = "";
+    publishContribution({ kind: "issue", text });
+  });
 
   // Author
   $("a-comment-send").addEventListener("click", () => {
@@ -501,6 +594,8 @@ window.addEventListener("DOMContentLoaded", () => {
   $("key-export-btn").addEventListener("click", exportKey);
   $("key-copy-btn").addEventListener("click", copyKey);
   $("key-import-btn").addEventListener("click", importKey);
+  $("key-scan-btn").addEventListener("click", scanKeyQr);
+  initKeyScan();
 
   // Settings
   $("settings-save").addEventListener("click", saveSettings);
@@ -509,7 +604,14 @@ window.addEventListener("DOMContentLoaded", () => {
   listen("share", drainPendingShare);
   drainPendingShare();
 
+  // Backup nudge
+  $("backup-nudge-btn").addEventListener("click", () => {
+    $("key-export").value = "";
+    show("key");
+  });
+
   show("home");
+  checkBackupNudge();
 });
 
 // No-op placeholder so back-navigation stays cheap; kept for symmetry.
