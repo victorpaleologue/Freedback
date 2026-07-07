@@ -106,4 +106,19 @@ confirm its `LICENSE` before porting. Attribution snippets live in
 
 Every change must keep CI green: `cargo fmt --check`, `cargo clippy -D warnings`,
 native tests, the `wasm32-unknown-unknown` build of `protocol-lib`/`cli-client`,
-and ontology validation. See `.github/workflows/ci.yml`.
+and ontology validation. See `.github/workflows/ci.yml`. CI only runs the suites
+affected by what changed (a `changes` job in `ci.yml` gates the rest).
+
+## Per-package versions & releases
+
+Every releasable unit (the crates, `widgets`, the `mobile` app, the Firefox
+extension) is versioned, tagged, and released **independently** —
+`.github/packages.json` is the single source of truth. Two rules:
+
+1. **Bump-on-touch.** A PR that changes a package's code MUST bump that
+   package's own `version` (docs-only changes are exempt). `versions.yml`
+   enforces this and will fail the PR otherwise. Crates carry an explicit
+   `version` in their own `Cargo.toml` (NOT `version.workspace = true`).
+2. **Release-on-merge.** `tag-and-release.yml` tags `<name>-v<version>` and cuts
+   a GitHub Release for each package whose version is new — one tag per package,
+   idempotent. See `docs/deployment.md`.

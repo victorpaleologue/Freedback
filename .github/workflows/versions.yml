@@ -1,0 +1,33 @@
+name: Versions
+
+# Per-package version-bump gate. Every package in .github/packages.json is
+# released independently on merge (one tag per package, see tag-and-release.yml),
+# so a PR that changes a package's code MUST bump that package's version —
+# otherwise its release would be skipped or collide with an existing tag.
+#
+# Runs on ALL pull requests (unlike ci.yml/app-ci.yml, which are path-scoped),
+# because it has to see changes to any package — crates, widgets, the mobile
+# app, or the extension. Docs-only changes (*.md / LICENSE) never require a bump.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  require-bumps:
+    name: require a version bump on touched packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the merge-base with the target branch to diff against.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check version bumps
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1 || true
+          node .github/scripts/check-version-bumps.mjs

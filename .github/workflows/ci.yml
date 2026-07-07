@@ -22,9 +22,42 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  # Which parts of the repo changed — so we only run the suites that matter.
+  # A docs-only or ontology-only PR shouldn't pay for the whole Rust + browser
+  # matrix. Each downstream job gates on one of these outputs.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      wasm: ${{ steps.filter.outputs.wasm }}
+      widgets: ${{ steps.filter.outputs.widgets }}
+      ontology: ${{ steps.filter.outputs.ontology }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            wasm:
+              - 'crates/protocol-lib/**'
+              - 'crates/cli-client/**'
+              - 'Cargo.lock'
+            widgets:
+              - 'widgets/**'
+              - 'firefox-extension/**'
+            ontology:
+              - 'ontology/**'
+
   # Native: format, lint, test the whole workspace.
   native:
     name: native (fmt · clippy · test)
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +78,8 @@ jobs:
   # WASM: the dual-target crates must build for the browser target.
   wasm:
     name: wasm32 (browser build)
+    needs: changes
+    if: ${{ needs.changes.outputs.wasm == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,6 +98,8 @@ jobs:
   # the `x86_64-unknown-linux-musl` build green so a tag never fails to cut.
   musl:
     name: x86_64-linux-musl (static build)
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +128,8 @@ jobs:
   # Widgets / extension: the JS must parse and the pure helpers must pass.
   widgets:
     name: widgets (js)
+    needs: changes
+    if: ${{ needs.changes.outputs.widgets == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -140,6 +179,9 @@ jobs:
   # in-memory store (oxigraph default feature, RocksDB off) so no Clang is needed.
   widgets-e2e:
     name: widgets (e2e · headless browser)
+    needs: changes
+    # Runs when the widgets change OR the servers they drive change.
+    if: ${{ needs.changes.outputs.widgets == 'true' || needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -176,6 +218,8 @@ jobs:
   # Ontology: the served RDF/JSON-LD artifacts must parse.
   ontology:
     name: ontology (parse checks)
+    needs: changes
+    if: ${{ needs.changes.outputs.ontology == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

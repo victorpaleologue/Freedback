@@ -59,41 +59,62 @@ jobs:
           fi
 
   # app-ci.yml triggers on push-to-main and PRs touching apps/mobile/**, NOT on
-  # tag pushes — so nothing stops a red-CI (or never-CI'd) commit from being
-  # tagged and published. This checks app-ci.yml's most recent run for the
-  # exact tagged commit and fails if it's missing or unsuccessful. It runs
-  # only on an actual mobile-v* release attempt, matching the Publish step's
-  # own condition below — a tag-less smoke-test dispatch is unaffected.
+  # tag pushes — so nothing stops a red-CI commit from being tagged and
+  # published. This gate checks app-ci.yml for the exact commit being released.
+  #
+  # It is auto-dispatched by tag-and-release.yml right after a merge, so it has
+  # to tolerate two timing realities:
+  #   * a mobile change: app-ci is running concurrently → POLL until it finishes.
+  #   * a non-mobile change (e.g. the app's version was already current but never
+  #     tagged): app-ci never ran for this commit → after a grace window, PASS,
+  #     because the mobile code is unchanged and `main` is branch-protected.
+  # A real RED app-ci for this commit still fails the gate.
   verify-ci:
     name: verify CI passed on this commit
     runs-on: ubuntu-latest
     if: ${{ startsWith(inputs.tag || github.ref_name, 'mobile-v') }}
     steps:
-      - name: Check app-ci.yml's latest run for this commit
+      - name: Check app-ci.yml for this commit (poll + grace)
         uses: actions/github-script@v7
         with:
           script: |
             const sha = context.sha;
-            const { data } = await github.rest.actions.listWorkflowRuns({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: "app-ci.yml",
-              head_sha: sha,
-            });
-            const run = data.workflow_runs.find((r) => r.status === "completed");
-            if (!run) {
-              core.setFailed(
-                `No completed App CI run found for commit ${sha}. Cut mobile release tags from a commit on main that has already passed app-ci.yml (it doesn't trigger on tag pushes).`
-              );
-              return;
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            const listRuns = async () =>
+              (await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: "app-ci.yml",
+                head_sha: sha,
+              })).data.workflow_runs;
+
+            const MAX_MIN = 20;   // poll a running app-ci up to this long
+            const GRACE_MIN = 3;  // if none ever appears, assume "unchanged" and pass
+            const start = Date.now();
+            let sawAny = false;
+            for (let i = 0; ; i++) {
+              const runs = await listRuns();
+              if (runs.length) sawAny = true;
+              const done = runs.find((r) => r.status === "completed");
+              if (done) {
+                if (done.conclusion === "success") {
+                  core.info(`App CI passed for ${sha}: ${done.html_url}`);
+                  return;
+                }
+                core.setFailed(`App CI did not succeed for ${sha} (conclusion: ${done.conclusion}). ${done.html_url}`);
+                return;
+              }
+              const mins = (Date.now() - start) / 60000;
+              if (!sawAny && mins >= GRACE_MIN) {
+                core.info(`No app-ci run for ${sha} after ${GRACE_MIN}m — assuming mobile code is unchanged on this commit; passing.`);
+                return;
+              }
+              if (mins >= MAX_MIN) {
+                core.setFailed(`App CI for ${sha} did not complete within ${MAX_MIN}m.`);
+                return;
+              }
+              await sleep(30000);
             }
-            if (run.conclusion !== "success") {
-              core.setFailed(
-                `App CI did not succeed on commit ${sha} (conclusion: ${run.conclusion}). ${run.html_url}`
-              );
-              return;
-            }
-            core.info(`App CI passed for commit ${sha}: ${run.html_url}`);
 
   release:
     name: build release apk + aab (arm64)

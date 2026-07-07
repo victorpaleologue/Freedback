@@ -80,7 +80,48 @@ why it is opt-in rather than the default demo image.
 
 ## Releases
 
-`.github/workflows/release.yml` cuts artifacts on a semver tag:
+### Per-package releases (the primary model)
+
+Every releasable unit is versioned, tagged, and released **independently**. The
+set of packages is declared once in `.github/packages.json`:
+
+| Package | Path | Tag |
+|---|---|---|
+| `protocol-lib`, `storage`, `feedback-server`, `cli-client`, `discovery-server`, `collection-server`, `advanced-client` | `crates/*` | `<name>-v<version>` |
+| `widgets` (`@freedback/widgets`) | `widgets/` | `widgets-v<version>` |
+| `mobile` (the Tauri app) | `apps/mobile/` | `mobile-v<version>` |
+| `firefox-extension` | `firefox-extension/` | `firefox-extension-v<version>` |
+
+Two rules make this run without anyone cutting tags by hand:
+
+1. **Bump-on-touch (enforced at PR time).** `.github/workflows/versions.yml`
+   fails a pull request that changes a package's code without bumping that
+   package's version (docs-only changes are exempt). Each crate carries its own
+   `version` in its `Cargo.toml` (no longer inherited from the workspace);
+   `widgets` uses its `package.json` version; the mobile app uses its workspace
+   version; the extension uses its `manifest.json` version.
+2. **Tag + release on merge.** `.github/workflows/tag-and-release.yml` runs on
+   every push to `main`: for each package whose current version has no tag yet,
+   it creates `<name>-v<version>` and a GitHub Release. It's idempotent — a
+   merge that bumped only `feedback-server` releases only `feedback-server`.
+   - **binary crates** (the servers, `freedback`, `freedback-sync`) attach a
+     static `x86_64-unknown-linux-musl` binary (the build also gates the
+     release — broken code can't publish);
+   - **library crates** (`protocol-lib`, `storage`) and the extension get a
+     notes-only Release;
+   - **`widgets`** additionally runs `npm publish` (guarded on `NPM_TOKEN`);
+   - **`mobile`** hands off to `mobile-release.yml`, which builds the signed
+     APK/AAB and publishes behind its own `app-ci.yml` gate.
+
+The `changes` job in `ci.yml` also uses the package layout to run **only the
+suites affected by a change** (a docs- or ontology-only PR skips the Rust and
+browser matrices).
+
+### Aggregate binary bundle (legacy / manual)
+
+`.github/workflows/release.yml` still exists for a **manual** all-in-one build
+of the static binaries + the wasm bundle. It fires on a plain `v<semver>` tag
+(which the per-package automation never creates) or `workflow_dispatch`:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0

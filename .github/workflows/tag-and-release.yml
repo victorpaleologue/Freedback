@@ -1,0 +1,135 @@
+name: Tag & release (per package)
+
+# On every merge to main, release each package whose current version has no tag
+# yet — one tag per package (`<name>-v<version>`), one GitHub Release each.
+# Idempotent: a package is released exactly once per version, so a merge that
+# only bumped `feedback-server` releases only `feedback-server`.
+#
+# Per package kind:
+#   - cargo bin  (feedback/discovery/collection-server, cli-client,
+#     advanced-client) → build the static musl binary, attach it to the Release.
+#     The build doubles as a gate: broken code can't produce a Release.
+#   - cargo lib  (protocol-lib, storage) → tag + Release notes only.
+#   - npm (widgets) → tag + Release, then `npm publish` (guarded on NPM_TOKEN;
+#     its own prepublishOnly builds + tests, so a broken widget can't publish).
+#   - json (firefox-extension) → tag + Release notes.
+#   - cargo-workspace (mobile) → dispatch mobile-release.yml with the tag input;
+#     that workflow creates the tag, builds the signed APK/AAB, and publishes
+#     the Release, behind its own app-ci.yml gate.
+#
+# Version bumps are required at PR time (versions.yml), so by the time a change
+# lands on main the new version is already in place — this workflow just cuts
+# the tag and release for it.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create tags + releases
+  actions: write # dispatch mobile-release.yml
+
+concurrency:
+  group: tag-and-release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: plan releases
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.plan.outputs.packages }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need existing tags to know what's already released
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - id: plan
+        run: node .github/scripts/plan-releases.mjs
+
+  release:
+    name: release ${{ matrix.package.tag }}
+    needs: plan
+    if: ${{ needs.plan.outputs.any == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.plan.outputs.packages) }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # --- mobile: hand off to the signed-APK pipeline ---------------------
+      - name: Dispatch the mobile release
+        if: ${{ matrix.package.kind == 'cargo-workspace' }}
+        run: |
+          echo "Dispatching ${{ matrix.package.releaseWorkflow }} for ${{ matrix.package.tag }}"
+          gh workflow run "${{ matrix.package.releaseWorkflow }}" \
+            --ref main -f tag="${{ matrix.package.tag }}"
+
+      # --- cargo bin: build the static musl binary ------------------------
+      - name: Install Rust + musl target
+        if: ${{ matrix.package.bin != '' && matrix.package.kind == 'cargo' }}
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ matrix.package.bin != '' && matrix.package.kind == 'cargo' }}
+        with:
+          key: release-${{ matrix.package.name }}
+      - name: Install zig + cargo-zigbuild
+        if: ${{ matrix.package.bin != '' && matrix.package.kind == 'cargo' }}
+        run: pip3 install ziglang
+      - uses: taiki-e/install-action@v2
+        if: ${{ matrix.package.bin != '' && matrix.package.kind == 'cargo' }}
+        with:
+          tool: cargo-zigbuild
+      - name: Build + package the binary
+        if: ${{ matrix.package.bin != '' && matrix.package.kind == 'cargo' }}
+        run: |
+          cargo zigbuild --release --target x86_64-unknown-linux-musl -p "freedback-${{ matrix.package.name }}"
+          mkdir -p dist
+          name="${{ matrix.package.tag }}-x86_64-linux-musl"
+          tar -C target/x86_64-unknown-linux-musl/release -czf "dist/${name}.tar.gz" "${{ matrix.package.bin }}"
+          (cd dist && sha256sum *.tar.gz > "${name}.sha256")
+          ls -l dist
+
+      # --- create the tag + GitHub Release --------------------------------
+      - name: Create the release
+        if: ${{ matrix.package.kind != 'cargo-workspace' }}
+        run: |
+          assets=""
+          if [ -d dist ]; then assets="dist/*"; fi
+          gh release create "${{ matrix.package.tag }}" \
+            --target "${{ github.sha }}" \
+            --title "${{ matrix.package.name }} ${{ matrix.package.version }}" \
+            --generate-notes \
+            $assets
+
+      # --- npm publish for the widgets package (guarded) ------------------
+      - uses: actions/setup-node@v4
+        if: ${{ matrix.package.kind == 'npm' }}
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Publish to npm
+        if: ${{ matrix.package.kind == 'npm' }}
+        working-directory: ${{ matrix.package.path }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN not set — skipping npm publish (the tag + GitHub Release still went out)."
+            exit 0
+          fi
+          npm ci
+          npm publish --access public
