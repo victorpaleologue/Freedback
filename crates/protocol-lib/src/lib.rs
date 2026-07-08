@@ -53,7 +53,9 @@ pub use export::{from_jwt, to_jwt};
 pub use identity::{issuer_id_from_pem, verify_annotation, Identity};
 pub use jsonld::from_jsonld;
 pub use mangrove::{from_mangrove_jwt, to_mangrove_jwt};
-pub use model::{Annotation, Body, Creator, Motivation, Selector, Signature, Target};
+pub use model::{
+    Annotation, Body, Creator, Motivation, Selector, Signature, Target, ANNOTATION_URN_PREFIX,
+};
 pub use negentropy::{Item, Message, RangeMsg, Reconcile};
 
 #[cfg(feature = "validation")]

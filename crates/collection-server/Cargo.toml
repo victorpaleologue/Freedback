@@ -1,7 +1,7 @@
 [package]
 name = "freedback-collection-server"
 description = "Freedback collection/aggregation server: per-URI index, equivalence, polite caching, rate limiting."
-version = "1.0.0"
+version = "1.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

@@ -145,6 +145,11 @@ pub fn annotation_to_review(ann: &Annotation, iss_pem: &str) -> Result<Value> {
             // target; Mangrove has no dedicated field, so it exports as the
             // review's `opinion` (lossy: it round-trips as a comment).
             Body::Issue { value } => opinion = Some(value.clone()),
+            // A reply (ADR 0024) is free text aimed at another annotation;
+            // Mangrove is flat (reviews of a subject, no threading), so it
+            // exports as the review's `opinion` (lossy: the thread structure,
+            // which lives in the reply's target, is not represented).
+            Body::Reply { value } => opinion = Some(value.clone()),
             // A tag has no Mangrove equivalent field; fold it into images as a
             // labelled marker so it is not silently dropped (round-trips via
             // metadata is lossy, so we keep tags in `metadata.tags`).

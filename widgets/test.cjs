@@ -120,6 +120,9 @@ const {
   scalarBody,
   textBody,
   buildSignedAnnotation,
+  replyParentDedup,
+  targetSource,
+  ANNO_URN_PREFIX,
   deleteDocument,
   buildSignedDelete,
   dedupFromId,
@@ -241,6 +244,56 @@ assert.strictEqual(
   EXPECTED_CANONICAL_ISSUE,
   "issue JCS must byte-match the Rust canonicalizer"
 );
+
+// Cross-language pin for the REPLY feedback type (ADR 0024): an oa:replying
+// annotation, an oa:TextualBody with the "replying" purpose, and the parent
+// addressed by its content-address URN. Pinned against the Rust canonicalizer
+// in crates/protocol-lib/src/canonical.rs (reply_canonical_bytes_and_dedup_id_
+// are_pinned), so a reply signed in the browser verifies server-side.
+const EXPECTED_CANONICAL_REPLY =
+  '{"@context":["http://www.w3.org/ns/anno.jsonld","https://freedback.net/ns/context.jsonld"],' +
+  '"body":[{"format":"text/plain","purpose":"replying","type":"TextualBody",' +
+  '"value":"good point"}],' +
+  '"conformsTo":"https://freedback.net/profile/1","created":"2026-06-21T10:00:00Z",' +
+  '"creator":{"id":"urn:freedback:key:abc"},"motivation":"replying",' +
+  '"target":"urn:freedback:annotation:abc123","type":"Annotation"}';
+const replyContent = canonicalContent(
+  "replying",
+  ANNO_URN_PREFIX + "abc123",
+  textBody("good point", "replying"),
+  "urn:freedback:key:abc",
+  "2026-06-21T10:00:00Z"
+);
+assert.strictEqual(
+  jcs(replyContent),
+  EXPECTED_CANONICAL_REPLY,
+  "reply JCS must byte-match the Rust canonicalizer"
+);
+
+// A reply's parent is recovered from its content-address URN target; a reply
+// body is extracted by the "replying" purpose. Non-reply targets yield null,
+// so the same pass separates thread roots from replies (ADR 0024).
+assert.strictEqual(ANNO_URN_PREFIX, "urn:freedback:annotation:");
+assert.strictEqual(
+  replyParentDedup({ target: ANNO_URN_PREFIX + "abc123" }),
+  "abc123",
+  "reply parent recovered from a string URN target"
+);
+assert.strictEqual(
+  replyParentDedup({ target: { source: ANNO_URN_PREFIX + "def456" } }),
+  "def456",
+  "reply parent recovered from an object target's source"
+);
+assert.strictEqual(
+  replyParentDedup({ target: "https://example.com/item/1" }),
+  null,
+  "a subject-targeted annotation is not a reply"
+);
+assert.strictEqual(targetSource({ source: "urn:x" }), "urn:x");
+assert.strictEqual(targetSource("urn:y"), "urn:y");
+const replyBody = { body: [textBody("good point", "replying")] };
+assert.deepStrictEqual(textBodies(replyBody, "replying"), ["good point"]);
+assert.deepStrictEqual(textBodies(replyBody, "commenting"), []);
 
 // JCS invariants: key order independence, number form, array order preserved.
 assert.strictEqual(jcs({ b: 1, a: 2 }), '{"a":2,"b":1}');

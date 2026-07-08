@@ -166,6 +166,10 @@ pub fn aggregate(target: &str, annotations: &[Annotation]) -> FeedbackView {
                 // Scalar ratings have no widget in the app yet; they still
                 // count toward `total` via the annotation itself.
                 Body::ScalarRating { .. } => {}
+                // Replies (ADR 0024) target another annotation, not this
+                // subject, so a subject query never returns them; ignored here.
+                // Threaded discussion is a widget feature, not in the app yet.
+                Body::Reply { .. } => {}
             }
         }
     }

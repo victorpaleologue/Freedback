@@ -235,6 +235,37 @@ mod tests {
         assert_eq!(dedup_id(&a).unwrap(), dedup_id(&b).unwrap());
     }
 
+    /// The canonical bytes of a REPLY (ADR 0024) are pinned to the exact bytes
+    /// the widget canonicalizes (`widgets/test.cjs`, `EXPECTED_CANONICAL_REPLY`):
+    /// an `oa:replying` motivation, an `oa:TextualBody` with `replying` purpose,
+    /// and the parent addressed by its content-address URN. A reply signed in
+    /// the browser must verify server-side, so these must not diverge.
+    #[test]
+    fn reply_canonical_bytes_and_dedup_id_are_pinned() {
+        let ann = Annotation::new(
+            Motivation::Replying,
+            Target::annotation("abc123"),
+            vec![Body::reply("good point")],
+        )
+        .with_created("2026-06-21T10:00:00Z")
+        .with_creator(crate::model::Creator::new("urn:freedback:key:abc"));
+        let expected = concat!(
+            r#"{"@context":["http://www.w3.org/ns/anno.jsonld","https://freedback.net/ns/context.jsonld"],"#,
+            r#""body":[{"format":"text/plain","purpose":"replying","type":"TextualBody","#,
+            r#""value":"good point"}],"#,
+            r#""conformsTo":"https://freedback.net/profile/1","created":"2026-06-21T10:00:00Z","#,
+            r#""creator":{"id":"urn:freedback:key:abc"},"motivation":"replying","#,
+            r#""target":"urn:freedback:annotation:abc123","type":"Annotation"}"#
+        );
+        let bytes = canonical_bytes(&ann).unwrap();
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected);
+        assert_eq!(
+            dedup_id(&ann).unwrap(),
+            "46faac7456c916d9314d65f811fc5896e2d508810f2d5f5720902fe2280fd71e",
+            "the reply dedup id is content-derived and stable"
+        );
+    }
+
     #[test]
     fn dedup_id_changes_with_content() {
         let a = sample();

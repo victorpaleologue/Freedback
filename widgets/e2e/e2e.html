@@ -33,6 +33,8 @@
       const target = q.get("target") || "https://example.com/item/e2e";
       const token = q.get("token") || "";
       const auth = q.get("auth") || (token ? "token" : "sign");
+      // Opt-in threaded replies (ADR 0024) on the comment widget only.
+      const replies = q.get("replies");
 
       const container = document.getElementById("widgets");
       const kinds = [
@@ -55,6 +57,7 @@
         if (read) el.setAttribute("data-read", read);
         if (feedback) el.setAttribute("data-publish", feedback);
         for (const [k, v] of Object.entries(extra)) el.setAttribute(k, v);
+        if (replies && tag === "freedback-comment") el.setAttribute("data-replies", "");
         if (auth === "sign") {
           el.setAttribute("data-sign", "");
         } else if (token) {

@@ -331,6 +331,32 @@ a.fb-fp:focus-visible { opacity: 1; text-decoration: underline; }
 .fb-issue textarea.fb-in { resize: vertical; font: inherit; }
 .fb-issue .fb-list li.fb-issue-item::before { content: "⚠ "; }
 
+/* Threaded replies (ADR 0024): opt-in via `data-replies`. A "Reply" control
+ * on each comment/reply reveals an inline form; the replies that target an
+ * item nest beneath it, indented with a connecting rule. */
+.fb-reply-btn {
+  background: none;
+  border: none;
+  color: var(--fb-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0 0.25rem;
+  margin-left: 0.35rem;
+  border-radius: 4px;
+}
+.fb-reply-btn:hover,
+.fb-reply-btn:focus-visible { color: var(--fb-ink); text-decoration: underline; }
+.fb-reply-form { margin-top: 0.35rem; gap: 0.4rem; }
+.fb-reply-form .fb-in { flex: 1; }
+.fb-replies {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0 0.75rem;
+  border-left: 2px solid var(--fb-line);
+  padding-left: 0.6rem;
+}
+.fb-replies li.fb-reply-item { background: transparent; padding: 0.25rem 0; margin-bottom: 0.2rem; }
+
 /* ---- compiled docs (/docs/**, built from docs/*.md by docs-tools) --------- */
 /* The wrapper the doc compiler puts around rendered Markdown. Widens the column
  * a touch (prose + tables + wide code fences) and gives the generated headings,

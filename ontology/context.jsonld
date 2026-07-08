@@ -19,6 +19,8 @@
     "assessing": "oa:assessing",
     "commenting": "oa:commenting",
     "tagging": "oa:tagging",
+    "editing": "oa:editing",
+    "replying": "oa:replying",
 
     "body": { "@id": "oa:hasBody", "@type": "@id" },
     "target": { "@id": "oa:hasTarget", "@type": "@id" },

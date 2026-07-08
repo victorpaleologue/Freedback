@@ -127,6 +127,11 @@ fn write_body(w: &mut Writer, b: &str, body: &Body) {
             w.string_literal(b, RDF_VALUE, value);
             w.iri_obj(b, &iri(OA, "hasPurpose"), &iri(OA, "editing"));
         }
+        Body::Reply { value } => {
+            w.type_(b, &iri(OA, "TextualBody"));
+            w.string_literal(b, RDF_VALUE, value);
+            w.iri_obj(b, &iri(OA, "hasPurpose"), &iri(OA, "replying"));
+        }
     }
 }
 
@@ -154,6 +159,7 @@ fn motivation_iri(m: Motivation) -> String {
         Motivation::Commenting => iri(OA, "commenting"),
         Motivation::Tagging => iri(OA, "tagging"),
         Motivation::Editing => iri(OA, "editing"),
+        Motivation::Replying => iri(OA, "replying"),
     }
 }
 

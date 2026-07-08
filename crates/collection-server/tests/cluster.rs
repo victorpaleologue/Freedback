@@ -172,10 +172,14 @@ async fn fresh_cache_serves_without_any_upstream_call() {
         assert_eq!(idx["total"], 1);
     }
 
+    // Two distinct upstream targets are cache-filled on the first query: the
+    // subject itself, plus the one reply-probe the thread second hop makes for
+    // the discovered annotation (`urn:freedback:annotation:<id>`, ADR 0024).
+    // Both are then fresh, so the remaining queries touch upstream not at all.
     assert_eq!(
         state.upstream_calls(),
-        1,
-        "only the first (cache-filling) query should reach upstream, got {}",
+        2,
+        "only the first query fills the cache (subject + reply-probe), got {}",
         state.upstream_calls()
     );
     assert_eq!(
@@ -185,8 +189,8 @@ async fn fresh_cache_serves_without_any_upstream_call() {
         state.upstream_304()
     );
     assert!(
-        state.cache_hits() >= 3,
-        "subsequent reads should be served from the fresh cache, got {} hits",
+        state.cache_hits() >= 6,
+        "subsequent reads (subject + reply-probe) should be served from the fresh cache, got {} hits",
         state.cache_hits()
     );
 }
@@ -406,6 +410,77 @@ async fn persisted_state_survives_restart() {
     assert_eq!(
         idx["total"], 2,
         "run #2 still unifies across the persisted equivalence class"
+    );
+}
+
+/// A signed comment on `target`, plus its dedup id (so a reply can address it).
+fn signed_comment(target: &str, text: &str) -> (Annotation, String) {
+    let id = Identity::generate();
+    let mut ann = Annotation::new(
+        Motivation::Commenting,
+        Target::Iri(target.into()),
+        vec![Body::Comment { value: text.into() }],
+    )
+    .with_created("2026-06-21T10:00:00Z")
+    .with_creator(Creator::new(id.issuer_id().unwrap()));
+    id.sign_annotation(&mut ann).unwrap();
+    let dedup = freedback_protocol::dedup_id(&ann).unwrap();
+    (ann, dedup)
+}
+
+/// A signed reply (`oa:replying`) addressing a parent annotation by its
+/// content-address URN, plus its own dedup id.
+fn signed_reply(parent_dedup: &str, text: &str) -> (Annotation, String) {
+    let id = Identity::generate();
+    let mut ann = Annotation::new(
+        Motivation::Replying,
+        Target::annotation(parent_dedup),
+        vec![Body::reply(text)],
+    )
+    .with_created("2026-06-21T10:05:00Z")
+    .with_creator(Creator::new(id.issuer_id().unwrap()));
+    id.sign_annotation(&mut ann).unwrap();
+    let dedup = freedback_protocol::dedup_id(&ann).unwrap();
+    (ann, dedup)
+}
+
+/// Threads (ADR 0024): a reply targets its parent by content-address URN, not the
+/// original subject, so `/index?target=<subject>` must take a second hop to fold
+/// the reply — and the reply-to-the-reply — into the aggregate.
+#[tokio::test]
+async fn replies_are_folded_in_by_second_hop() {
+    let (comment, comment_id) = signed_comment(A, "first!");
+    let (reply, reply_id) = signed_reply(&comment_id, "nice");
+    let (nested, _nested_id) = signed_reply(&reply_id, "agreed");
+
+    let fb = spawn_feedback(&[comment, reply, nested]).await;
+    let (col, state) = spawn_collection(RateLimit::default()).await;
+    state.add_server(&fb);
+    let http = reqwest::Client::new();
+
+    let idx: Value = http
+        .get(format!("{col}/index?target={A}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        idx["total"], 3,
+        "the subject query must fold in the reply and the nested reply via the reply graph"
+    );
+
+    // Every URN-addressed reply resolved back to a concrete annotation.
+    let items = idx["items"].as_array().unwrap();
+    let replies = items
+        .iter()
+        .filter(|a| a["motivation"] == "replying")
+        .count();
+    assert_eq!(
+        replies, 2,
+        "both the reply and the nested reply are present"
     );
 }
 

@@ -565,6 +565,30 @@ mod tests {
     }
 
     #[test]
+    fn valid_reply_conforms() {
+        // Reply (ADR 0024): an oa:TextualBody with the standard oa:replying
+        // motivation, targeting the parent by content-address URN. Validates
+        // under the existing TextualBodyShape — motivations are not enumerated
+        // in the profile, so no shape change and no new vocabulary.
+        let out = validate_annotation(&Annotation::new(
+            Motivation::Replying,
+            Target::annotation("abc123"),
+            vec![Body::reply("well said")],
+        ))
+        .unwrap();
+        assert!(out.conforms, "expected conforms, got {:?}", out.violations);
+    }
+
+    #[test]
+    fn empty_reply_is_rejected() {
+        let out = validate_annotation(&ann_with(Body::Reply {
+            value: String::new(),
+        }))
+        .unwrap();
+        assert!(!out.conforms, "an empty reply text must be rejected");
+    }
+
+    #[test]
     fn valid_comment_conforms() {
         let out = validate_annotation(&Annotation::new(
             Motivation::Commenting,
