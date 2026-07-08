@@ -1,6 +1,6 @@
 {
   "name": "@freedback/widgets",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Freedback drop-in feedback widgets — dependency-free W3C Web Annotation custom elements (stars, thumb, scalar, comment, tag) for any framework or plain HTML.",
   "license": "Apache-2.0",
   "type": "module",
