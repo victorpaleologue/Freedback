@@ -320,6 +320,13 @@ async fn list_servers(State(state): State<AppState>) -> Json<Value> {
 #[derive(Deserialize)]
 struct IndexParams {
     target: String,
+    /// Opt into thread reconstruction (ADR 0024). Absent/`0`/empty ⇒ the cheap
+    /// single-hop aggregate. Only `?replies=1` pays for the breadth-first reply
+    /// walk below, so a plain read never amplifies into a probe-per-annotation
+    /// fan-out (which would drain the per-host rate budget and make the *next*
+    /// read serve a stale cached page).
+    #[serde(default)]
+    replies: Option<String>,
 }
 
 /// `GET /index?target=` — merged, deduped aggregate across servers + equivalents.
@@ -340,37 +347,49 @@ async fn index(State(state): State<AppState>, Query(p): Query<IndexParams>) -> J
         }
     }
 
-    // Second hop — thread reconstruction (ADR 0024). Replies carry
-    // `oa:motivatedBy oa:replying` and target their parent by content-address
-    // URN (`urn:freedback:annotation:<dedup_id>`), NOT the original subject, so
-    // they never surface in the loop above. Walk the reply graph breadth-first,
-    // fetching each newly discovered annotation's replies from every server.
-    // Each `fetch` stays polite (cached, rate-limited, tombstone-filtered), and
-    // a hop cap bounds the fan-out so a deep (or adversarial) thread can't make
-    // one `/index` call unbounded.
-    const MAX_THREAD_HOPS: usize = 6;
-    let mut frontier: Vec<String> = merged.keys().cloned().collect();
-    for _hop in 0..MAX_THREAD_HOPS {
-        if frontier.is_empty() {
-            break;
-        }
-        let mut next: Vec<String> = Vec::new();
-        for parent_id in &frontier {
-            let urn = format!("{ANNOTATION_URN_PREFIX}{parent_id}");
-            for server in &servers {
-                for ann in state.fetch(server, &urn).await {
-                    if let Ok(id) = dedup_id(&ann) {
-                        if let std::collections::hash_map::Entry::Vacant(slot) =
-                            merged.entry(id.clone())
-                        {
-                            slot.insert(ann);
-                            next.push(id);
+    // Second hop — thread reconstruction (ADR 0024), OPT-IN via `?replies=1`.
+    // Replies carry `oa:motivatedBy oa:replying` and target their parent by
+    // content-address URN (`urn:freedback:annotation:<dedup_id>`), NOT the
+    // original subject, so they never surface in the loop above. Walk the reply
+    // graph breadth-first, fetching each newly discovered annotation's replies
+    // from every server. Each `fetch` stays polite (cached, rate-limited,
+    // tombstone-filtered), and a hop cap bounds the fan-out so a deep (or
+    // adversarial) thread can't make one `/index` call unbounded.
+    //
+    // This is opt-in because it probes a reply-URN for *every* annotation in the
+    // aggregate: on a large non-threaded target that is a probe-per-annotation
+    // fan-out that would drain the per-host rate budget and leave the next read
+    // to serve a stale cached page. Clients that render threads ask for it; the
+    // common flat read stays a single hop.
+    let want_replies = p
+        .replies
+        .as_deref()
+        .is_some_and(|v| !v.is_empty() && v != "0" && v != "false");
+    if want_replies {
+        const MAX_THREAD_HOPS: usize = 6;
+        let mut frontier: Vec<String> = merged.keys().cloned().collect();
+        for _hop in 0..MAX_THREAD_HOPS {
+            if frontier.is_empty() {
+                break;
+            }
+            let mut next: Vec<String> = Vec::new();
+            for parent_id in &frontier {
+                let urn = format!("{ANNOTATION_URN_PREFIX}{parent_id}");
+                for server in &servers {
+                    for ann in state.fetch(server, &urn).await {
+                        if let Ok(id) = dedup_id(&ann) {
+                            if let std::collections::hash_map::Entry::Vacant(slot) =
+                                merged.entry(id.clone())
+                            {
+                                slot.insert(ann);
+                                next.push(id);
+                            }
                         }
                     }
                 }
             }
+            frontier = next;
         }
-        frontier = next;
     }
 
     let mut items: Vec<Annotation> = merged.into_values().collect();
