@@ -162,7 +162,9 @@ async fn fresh_cache_serves_without_any_upstream_call() {
 
     for _ in 0..4 {
         let idx: Value = http
-            .get(format!("{col}/index?target={A}"))
+            // `replies=1` exercises the thread second hop so the reply-probe
+            // page is part of what the cache must serve without revalidating.
+            .get(format!("{col}/index?target={A}&replies=1"))
             .send()
             .await
             .unwrap()
@@ -459,7 +461,7 @@ async fn replies_are_folded_in_by_second_hop() {
     let http = reqwest::Client::new();
 
     let idx: Value = http
-        .get(format!("{col}/index?target={A}"))
+        .get(format!("{col}/index?target={A}&replies=1"))
         .send()
         .await
         .unwrap()

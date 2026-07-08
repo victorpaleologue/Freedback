@@ -99,7 +99,15 @@ small net-new boolean gated by SHACL; deferred until wanted.)
   bounded second hop — after fetching annotations for the subject, fetch
   annotations whose target is one of those annotations' `dedup_id` URNs, to a
   capped depth (INVARIANT 7: HTTP/1.1 batch, so this is a bounded fan-out, not
-  a per-node round trip). The collection server owns this.
+  a per-node round trip). The collection server owns this, **opt-in behind
+  `GET /index?target=…&replies=1`**. It is opt-in because the walk probes a
+  reply-URN for *every* annotation in the aggregate: run unconditionally on a
+  large non-threaded target that is a probe-per-annotation fan-out that drains
+  the per-host rate budget, so the *next* read serves a stale cached page. The
+  flat read stays a single hop; only a thread-rendering client asks for the
+  walk. The widget (`data-replies`) does the equivalent hop **client-side** —
+  repeated `target=<urn>` base queries — so it reconstructs threads against a
+  plain feedback server too, without depending on `replies=1` server support.
 - The canonical bytes for replies are pinned cross-language (Rust
   `canonical.rs` ↔ widgets `test.cjs`), like every other body kind.
 
