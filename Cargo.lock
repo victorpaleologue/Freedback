@@ -750,7 +750,7 @@ dependencies = [
 
 [[package]]
 name = "freedback-collection-server"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -808,7 +808,7 @@ dependencies = [
 
 [[package]]
 name = "freedback-protocol"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64",
  "futures",

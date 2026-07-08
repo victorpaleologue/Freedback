@@ -124,6 +124,7 @@ fn parse_motivation(v: Option<&Value>) -> Result<Motivation> {
         "commenting" => Ok(Motivation::Commenting),
         "tagging" => Ok(Motivation::Tagging),
         "editing" => Ok(Motivation::Editing),
+        "replying" => Ok(Motivation::Replying),
         other => Err(Error::OutOfBounds(format!("unknown motivation: {other}"))),
     }
 }
@@ -240,6 +241,8 @@ fn parse_body(v: &Value) -> Result<Body> {
             Ok(Body::Tag { value })
         } else if purpose == "editing" {
             Ok(Body::Issue { value })
+        } else if purpose == "replying" {
+            Ok(Body::Reply { value })
         } else {
             Ok(Body::Comment { value })
         }
@@ -374,6 +377,42 @@ mod tests {
             dedup_id(&parsed).unwrap(),
             dedup_id(&canonical).unwrap(),
             "equivalent issue serializations must content-address identically"
+        );
+    }
+
+    #[test]
+    fn reply_targets_an_annotation_and_normalizes() {
+        // A reply (ADR 0024) is an oa:replying annotation whose target is the
+        // parent's content-address URN. Own + aliased JSON-LD forms collapse
+        // to the same model → same content address.
+        let parent_dedup = "abc123";
+        let canonical = Annotation::new(
+            Motivation::Replying,
+            Target::annotation(parent_dedup),
+            vec![Body::reply("well said")],
+        );
+        // The target round-trips to the urn:freedback:annotation: URN, and
+        // annotation_ref() reads the parent dedup id back out.
+        assert_eq!(canonical.target.source(), "urn:freedback:annotation:abc123");
+        assert_eq!(canonical.target.annotation_ref(), Some("abc123"));
+
+        let own = serde_json::to_value(&canonical).unwrap();
+        assert_eq!(from_jsonld(&own).unwrap(), canonical);
+
+        let variant = serde_json::json!({
+            "@context": "http://www.w3.org/ns/anno.jsonld",
+            "type": "Annotation",
+            "motivation": "oa:replying",
+            "target": "urn:freedback:annotation:abc123",
+            "body": { "type": "oa:TextualBody", "value": "well said", "purpose": "oa:replying" }
+        });
+        let parsed = from_jsonld(&variant).unwrap();
+        assert!(matches!(parsed.body.as_slice(), [Body::Reply { value }] if value == "well said"));
+        assert_eq!(parsed.motivation, Motivation::Replying);
+        assert_eq!(
+            dedup_id(&parsed).unwrap(),
+            dedup_id(&canonical).unwrap(),
+            "equivalent reply serializations must content-address identically"
         );
     }
 

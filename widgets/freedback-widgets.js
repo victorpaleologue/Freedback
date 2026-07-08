@@ -34,6 +34,10 @@
 
   const ANNO_CTX = ["http://www.w3.org/ns/anno.jsonld", "https://freedback.net/ns/context.jsonld"];
   const PROFILE = "https://freedback.net/profile/1";
+  // A reply (ADR 0024) targets its parent annotation by content address, not by
+  // the parent's subject: the URN survives federation and the parent's erasure
+  // (only a tombstone remains). Must byte-match `ANNOTATION_URN_PREFIX` in Rust.
+  const ANNO_URN_PREFIX = "urn:freedback:annotation:";
 
   /** Build the read URL with a target query param.
    *
@@ -489,6 +493,23 @@
       .filter(Boolean);
   }
 
+  /** The source IRI of a target (a bare string, or the `source`/`id` of a
+   *  target object). */
+  function targetSource(target) {
+    if (!target) return null;
+    if (typeof target === "string") return target;
+    if (typeof target === "object") return target.source || target.id || null;
+    return null;
+  }
+
+  /** If `ann` is a reply (ADR 0024), the dedup id of the annotation it replies
+   *  to — extracted from its content-address URN target. `null` otherwise, so
+   *  the same pass separates thread roots from replies. */
+  function replyParentDedup(ann) {
+    const src = targetSource(ann && ann.target);
+    return src && src.startsWith(ANNO_URN_PREFIX) ? src.slice(ANNO_URN_PREFIX.length) : null;
+  }
+
   // The custom-element classes are only defined in a DOM environment, so this
   // file can also be `require`d in Node to unit-test the pure helpers above.
   const hasDom = typeof HTMLElement !== "undefined" && typeof customElements !== "undefined";
@@ -504,6 +525,9 @@
     get signing() { return this.hasAttribute("data-sign") && !!subtle(); }
     /** Optional license IRI set as the annotation's `rights` (ADR 0022). */
     get license() { return this.getAttribute("data-license") || undefined; }
+    /** Opt-in threaded discussion (ADR 0024): show a Reply control on text
+     *  feedback and reconstruct the reply graph. Off by default. */
+    get repliesEnabled() { return this.hasAttribute("data-replies"); }
 
     connectedCallback() {
       this.render();
@@ -513,7 +537,11 @@
     async refresh() {
       if (!this.readBase || !this.target) return;
       try {
-        this.annotations = await fetchAnnotations(this.readBase, this.target);
+        let anns = await fetchAnnotations(this.readBase, this.target);
+        // With replies opted in, fold in the thread the subject doesn't carry
+        // directly (replies target their parent by URN, not the subject).
+        if (this.repliesEnabled) anns = await this.expandThread(anns);
+        this.annotations = anns;
         // Ownership detection (ADR 0021): with data-sign in a secure context,
         // items whose creator.id equals this browser identity's issuer id are
         // the visitor's OWN feedback and get a delete affordance.
@@ -524,22 +552,60 @@
       }
     }
 
+    /** Client-side thread second hop (ADR 0024). A collection `/index` already
+     *  folds replies into the aggregate, but a widget pointed straight at a
+     *  feedback server must fetch them itself: a reply targets its parent by
+     *  content-address URN, so we walk the reply graph breadth-first from every
+     *  annotation seen, bounded by a hop cap so a deep thread can't fan out
+     *  without limit. Duplicates (e.g. when the read endpoint already included
+     *  the replies) collapse by dedup id. */
+    async expandThread(seed) {
+      const byId = new Map();
+      const ingest = (anns) => {
+        const fresh = [];
+        for (const ann of anns) {
+          const id = dedupFromId(ann.id);
+          const key = id || `anon:${byId.size}`;
+          if (!byId.has(key)) {
+            byId.set(key, ann);
+            if (id) fresh.push(id);
+          }
+        }
+        return fresh;
+      };
+      let frontier = ingest(seed);
+      const MAX_HOPS = 4;
+      for (let hop = 0; hop < MAX_HOPS && frontier.length; hop++) {
+        const pages = await Promise.all(
+          frontier.map((pid) =>
+            fetchAnnotations(this.readBase, ANNO_URN_PREFIX + pid).catch(() => [])
+          )
+        );
+        frontier = [];
+        for (const page of pages) frontier.push(...ingest(page));
+      }
+      return [...byId.values()];
+    }
+
     setStatus(msg) {
       const s = this.querySelector(".fb-status");
       if (s) s.textContent = msg;
     }
 
-    async submit(motivation, body) {
+    async submit(motivation, body, targetOverride) {
       if (!this.publishUrl) return;
+      // A reply targets its parent annotation by content-address URN; every
+      // other kind of feedback targets this widget's subject (ADR 0024).
+      const target = targetOverride || this.target;
       try {
         let ann;
         let stored;
         if (this.signing) {
           // data-license rides in the signed content (6th arg; created defaults).
-          ann = await buildSignedAnnotation(motivation, this.target, body, await getIdentity(), undefined, this.license);
+          ann = await buildSignedAnnotation(motivation, target, body, await getIdentity(), undefined, this.license);
           stored = await publish(this.publishUrl, ann);
         } else {
-          ann = baseAnnotation(motivation, this.target, body, this.license);
+          ann = baseAnnotation(motivation, target, body, this.license);
           stored = await publish(this.publishUrl, ann, this.token);
         }
         // Remember the just-published record's dedup id (the basename of the
@@ -634,6 +700,46 @@
         this.setStatus(String(e.message || e));
         this.emit("freedback:error", { error: e });
       }
+    }
+
+    /** A "Reply" control that reveals an inline form and, on submit, publishes
+     *  an `oa:replying` annotation targeting `parentDedup` by its URN (ADR
+     *  0024). Only rendered when `data-replies` is set and a publish endpoint
+     *  exists. Clicking again toggles the open form shut. */
+    replyControl(parentDedup) {
+      const wrap = document.createElement("span");
+      wrap.className = "fb-reply";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "fb-reply-btn";
+      btn.textContent = "Reply";
+      btn.addEventListener("click", () => {
+        const open = wrap.querySelector("form");
+        if (open) {
+          open.remove();
+          return;
+        }
+        const form = document.createElement("form");
+        form.className = "fb-row fb-reply-form";
+        const input = document.createElement("input");
+        input.className = "fb-in";
+        input.placeholder = "Write a reply…";
+        const send = document.createElement("button");
+        send.textContent = "Post";
+        form.append(input, send);
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const value = input.value.trim();
+          if (!value) return;
+          input.value = "";
+          form.remove();
+          this.submit("replying", textBody(value, "replying"), ANNO_URN_PREFIX + parentDedup);
+        });
+        wrap.appendChild(form);
+        input.focus();
+      });
+      wrap.appendChild(btn);
+      return wrap;
     }
 
     /** A small `×` control that erases `dedupId` when clicked. */
@@ -769,18 +875,66 @@
     renderAggregate() {
       const ul = this.querySelector(".fb-list");
       ul.innerHTML = "";
+      if (!this.repliesEnabled) {
+        // Flat list — the original behavior when threading is off.
+        for (const ann of this.annotations) {
+          for (const text of textBodies(ann, "commenting")) {
+            ul.appendChild(this.commentLi(ann, text, "commenting"));
+          }
+        }
+        return;
+      }
+      // Threaded (ADR 0024): index replies by the parent they target, then
+      // render each root comment with its replies nested beneath it.
+      const childrenOf = new Map();
       for (const ann of this.annotations) {
-        const own = this.isOwn(ann) && this.canErase();
+        const parent = replyParentDedup(ann);
+        if (!parent) continue;
+        if (!childrenOf.has(parent)) childrenOf.set(parent, []);
+        childrenOf.get(parent).push(ann);
+      }
+      for (const ann of this.annotations) {
+        if (replyParentDedup(ann)) continue; // replies render under their parent
         for (const text of textBodies(ann, "commenting")) {
-          const li = document.createElement("li");
-          li.append(text);
-          const badge = this.authorBadge(ann);
-          if (badge) li.append(" ", badge);
-          // The visitor's OWN comments get a delete control (ADR 0021).
-          if (own) li.appendChild(this.deleteControl(dedupFromId(ann.id)));
-          ul.appendChild(li);
+          ul.appendChild(this.threadNode(ann, text, "commenting", childrenOf));
         }
       }
+    }
+
+    /** One comment/reply `<li>`: text + author badge + own-delete control. */
+    commentLi(ann, text, purpose) {
+      const li = document.createElement("li");
+      if (purpose === "replying") li.className = "fb-reply-item";
+      li.append(text);
+      const badge = this.authorBadge(ann);
+      if (badge) li.append(" ", badge);
+      // The visitor's OWN comments/replies get a delete control (ADR 0021).
+      if (this.isOwn(ann) && this.canErase()) {
+        li.appendChild(this.deleteControl(dedupFromId(ann.id)));
+      }
+      return li;
+    }
+
+    /** A threaded node: the comment/reply, its Reply affordance, and — nested
+     *  beneath it — the replies that target it, recursively (ADR 0024). */
+    threadNode(ann, text, purpose, childrenOf) {
+      const li = this.commentLi(ann, text, purpose);
+      const dedup = dedupFromId(ann.id);
+      // A reply needs the item's own content address to target; without a
+      // server-minted id (unstamped) there is nothing to reply to.
+      if (this.publishUrl && dedup) li.appendChild(this.replyControl(dedup));
+      const kids = (dedup && childrenOf.get(dedup)) || [];
+      if (kids.length) {
+        const sub = document.createElement("ul");
+        sub.className = "fb-replies";
+        for (const kid of kids) {
+          for (const rtext of textBodies(kid, "replying")) {
+            sub.appendChild(this.threadNode(kid, rtext, "replying", childrenOf));
+          }
+        }
+        li.appendChild(sub);
+      }
+      return li;
     }
   }
 
@@ -893,6 +1047,10 @@
       scalarBody,
       textBody,
       buildSignedAnnotation,
+      // threaded replies (ADR 0024)
+      replyParentDedup,
+      targetSource,
+      ANNO_URN_PREFIX,
       // right to erasure (ADR 0021)
       deleteDocument,
       buildSignedDelete,

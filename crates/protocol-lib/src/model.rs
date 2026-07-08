@@ -33,6 +33,12 @@ pub enum Motivation {
     /// (ADR 0023) expressed with zero new vocabulary. NOTE: `oa:flagging` was
     /// considered but does NOT exist in the W3C Web Annotation vocabulary.
     Editing,
+    /// `oa:replying` — a reply to another annotation (`oa:TextualBody`): the W3C
+    /// motivation "for when the user intends to reply to a previous statement,
+    /// either an Annotation or another resource". A reply targets its parent by
+    /// content address (`urn:freedback:annotation:<dedup_id>`); threads are the
+    /// emergent target graph (ADR 0024). Zero new vocabulary.
+    Replying,
 }
 
 /// The agent that issued an annotation (the `creator`).
@@ -89,6 +95,12 @@ pub enum Target {
     },
 }
 
+/// URN prefix that addresses another annotation by its content id (`dedup_id`).
+/// A reply targets its parent as `urn:freedback:annotation:<dedup_id>`, which
+/// federates (same content → same URN on every server) and survives erasure
+/// (the tombstone is keyed by the same `dedup_id`). See ADR 0024.
+pub const ANNOTATION_URN_PREFIX: &str = "urn:freedback:annotation:";
+
 impl Target {
     /// The source IRI of the target, regardless of variant. This is the key
     /// used for per-URI indexing and equivalence.
@@ -97,6 +109,19 @@ impl Target {
             Target::Iri(s) => s,
             Target::Specific { source, .. } => source,
         }
+    }
+
+    /// A target that references another annotation by its content id — the
+    /// `urn:freedback:annotation:<dedup_id>` a reply points at (ADR 0024).
+    pub fn annotation(dedup_id: impl AsRef<str>) -> Self {
+        Target::Iri(format!("{ANNOTATION_URN_PREFIX}{}", dedup_id.as_ref()))
+    }
+
+    /// If this target references another annotation by content id, the
+    /// referenced `dedup_id`; otherwise `None`. Lets a reader walk a thread
+    /// from a reply back to its parent.
+    pub fn annotation_ref(&self) -> Option<&str> {
+        self.source().strip_prefix(ANNOTATION_URN_PREFIX)
     }
 }
 
@@ -122,6 +147,11 @@ pub enum Body {
     /// mirrors the annotation's motivation exactly like comments/tags do; the
     /// serialization stays an ordinary `oa:TextualBody` — zero new vocabulary.
     Issue { value: String },
+    /// `oa:TextualBody` with `oa:replying` purpose — a reply to another
+    /// annotation (ADR 0024). A distinct variant so the body `purpose` mirrors
+    /// the `oa:replying` motivation; still an ordinary `oa:TextualBody` — zero
+    /// new vocabulary.
+    Reply { value: String },
 }
 
 impl Body {
@@ -148,6 +178,10 @@ impl Body {
     /// An issue / problem report (free text, `oa:editing`).
     pub fn issue(text: impl Into<String>) -> Self {
         Body::Issue { value: text.into() }
+    }
+    /// A reply to another annotation (free text, `oa:replying`).
+    pub fn reply(text: impl Into<String>) -> Self {
+        Body::Reply { value: text.into() }
     }
 }
 
@@ -254,6 +288,15 @@ impl Serialize for Body {
                 format: Some("text/plain".into()),
                 purpose: Some("editing".into()),
             },
+            Body::Reply { value } => BodyWire {
+                type_: TypeField::One("TextualBody".into()),
+                rating_value: None,
+                worst_rating: None,
+                best_rating: None,
+                value: Some(value.clone()),
+                format: Some("text/plain".into()),
+                purpose: Some("replying".into()),
+            },
         };
         wire.serialize(ser)
     }
@@ -284,6 +327,7 @@ impl<'de> Deserialize<'de> for Body {
             match w.purpose.as_deref() {
                 Some("tagging") => Ok(Body::Tag { value }),
                 Some("editing") => Ok(Body::Issue { value }),
+                Some("replying") => Ok(Body::Reply { value }),
                 _ => Ok(Body::Comment { value }),
             }
         } else {

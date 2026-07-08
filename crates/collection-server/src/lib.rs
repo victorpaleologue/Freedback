@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use freedback_protocol::{dedup_id, Annotation};
+use freedback_protocol::{dedup_id, Annotation, ANNOTATION_URN_PREFIX};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::trace::TraceLayer;
@@ -338,6 +338,39 @@ async fn index(State(state): State<AppState>, Query(p): Query<IndexParams>) -> J
                 }
             }
         }
+    }
+
+    // Second hop — thread reconstruction (ADR 0024). Replies carry
+    // `oa:motivatedBy oa:replying` and target their parent by content-address
+    // URN (`urn:freedback:annotation:<dedup_id>`), NOT the original subject, so
+    // they never surface in the loop above. Walk the reply graph breadth-first,
+    // fetching each newly discovered annotation's replies from every server.
+    // Each `fetch` stays polite (cached, rate-limited, tombstone-filtered), and
+    // a hop cap bounds the fan-out so a deep (or adversarial) thread can't make
+    // one `/index` call unbounded.
+    const MAX_THREAD_HOPS: usize = 6;
+    let mut frontier: Vec<String> = merged.keys().cloned().collect();
+    for _hop in 0..MAX_THREAD_HOPS {
+        if frontier.is_empty() {
+            break;
+        }
+        let mut next: Vec<String> = Vec::new();
+        for parent_id in &frontier {
+            let urn = format!("{ANNOTATION_URN_PREFIX}{parent_id}");
+            for server in &servers {
+                for ann in state.fetch(server, &urn).await {
+                    if let Ok(id) = dedup_id(&ann) {
+                        if let std::collections::hash_map::Entry::Vacant(slot) =
+                            merged.entry(id.clone())
+                        {
+                            slot.insert(ann);
+                            next.push(id);
+                        }
+                    }
+                }
+            }
+        }
+        frontier = next;
     }
 
     let mut items: Vec<Annotation> = merged.into_values().collect();

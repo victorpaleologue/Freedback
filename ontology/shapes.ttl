@@ -118,13 +118,16 @@ freedback:ThumbRatingShape
         sh:message "thumb ratingValue must be 0.0 (down) or 1.0 (up)" ;
     ] .
 
-# --- Textual body (comment / tag / issue): non-empty string -----------------
+# --- Textual body (comment / tag / issue / reply): non-empty string ---------
 # Issue / problem reports (ADR 0023) are plain oa:TextualBody bodies whose
 # motivation/purpose is the STANDARD oa:editing ("request a change or edit to
-# the Target resource") — zero new vocabulary. They validate under this same
+# the Target resource") — zero new vocabulary. Replies (ADR 0024) are likewise
+# plain oa:TextualBody bodies under the STANDARD oa:replying ("reply to a
+# previous statement, either an Annotation or another resource"), targeting the
+# parent annotation by content-address URN. Both validate under this same
 # shape. Motivations are deliberately NOT enumerated anywhere in this profile,
-# so admitting oa:editing is a no-op here: nothing that validated before stops
-# validating, and no new constraint is added — stable-URL-compatible.
+# so admitting oa:editing / oa:replying is a no-op here: nothing that validated
+# before stops validating, and no new constraint is added — stable-URL-compatible.
 
 freedback:TextualBodyShape
     a sh:NodeShape ;

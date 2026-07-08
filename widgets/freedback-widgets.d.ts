@@ -50,6 +50,14 @@ export interface FreedbackDataAttributes {
    * needed either way — an author's IRI is just an ordinary target.
    */
   "data-author-href"?: string;
+  /**
+   * `<freedback-comment>` only: opt into threaded discussion (ADR 0024). When
+   * set, each comment/reply gets a "Reply" control; a reply is published as an
+   * `oa:replying` annotation targeting its parent by content-address URN, and
+   * the reply graph is reconstructed and rendered nested. Write it as
+   * `data-replies=""` in JSX. Off by default.
+   */
+  "data-replies"?: "" | boolean;
 }
 
 // --- outcome events (CustomEvent detail shapes) -------------------------------
@@ -232,6 +240,14 @@ export function scalarBody(
   best: number | string
 ): RatingBody;
 export function textBody(value: string, purpose: string): TextualBody;
+/** The `urn:freedback:annotation:` prefix a reply's target is built from
+ *  (ADR 0024). Matches `ANNOTATION_URN_PREFIX` in the Rust protocol lib. */
+export const ANNO_URN_PREFIX: string;
+/** The `source` IRI of a target — a bare string, or `source`/`id` of an object. */
+export function targetSource(target: unknown): string | null;
+/** If `ann` is a reply (ADR 0024), the dedup id of the annotation it targets by
+ *  content-address URN; `null` for a non-reply (subject-targeted) annotation. */
+export function replyParentDedup(ann: { target?: unknown }): string | null;
 export function buildSignedAnnotation(
   motivation: string,
   target: string,

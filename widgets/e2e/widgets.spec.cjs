@@ -23,14 +23,16 @@ test.beforeEach(() => {
   expect(READ, "FB_E2E_READ must be set by the launcher").toBeTruthy();
 });
 
-/** URL of the parametrized harness page for `auth` ('sign'|'token') + target. */
-function harnessUrl(auth, target) {
+/** URL of the parametrized harness page for `auth` ('sign'|'token') + target.
+ *  `opts.replies` opts the comment widget into threaded discussion (ADR 0024). */
+function harnessUrl(auth, target, opts = {}) {
   const u = new URL(STATIC + "/e2e/e2e.html");
   u.searchParams.set("feedback", FEEDBACK);
   u.searchParams.set("read", READ);
   u.searchParams.set("target", target);
   u.searchParams.set("auth", auth);
   if (auth === "token") u.searchParams.set("token", TOKEN);
+  if (opts.replies) u.searchParams.set("replies", "1");
   return u.toString();
 }
 
@@ -221,6 +223,38 @@ test("e2e harness: own-delete affordance survives a target past the default page
   await expect(page.locator(`#comment .fb-list li:has-text("${marker}") .fb-del`)).toBeVisible({
     timeout: 15000,
   });
+});
+
+// 2c) Threaded replies (ADR 0024): with data-replies opted in, a comment gets a
+// "Reply" control; posting a reply publishes an oa:replying annotation that
+// targets the parent by its content-address URN, and it renders nested beneath
+// the parent (reconstructed from the reply graph, not the subject).
+test("e2e harness: a reply publishes oa:replying and renders nested under its parent", async ({ page }) => {
+  const target = "https://example.com/item/thread-" + Date.now();
+  await page.goto(harnessUrl("sign", target, { replies: true }));
+  await page.waitForFunction(() => window.__fbReady === true);
+
+  // Post the root comment.
+  await page.locator("#comment .fb-in").first().fill("root comment");
+  await page.locator("#comment form button").first().click();
+  const root = page.locator('#comment > .fb-comment > .fb-list > li:has-text("root comment")');
+  await expect(root).toBeVisible({ timeout: 15000 });
+
+  // The opt-in Reply control is present on the root; open it and post a reply.
+  const replyBtn = root.locator("> .fb-reply .fb-reply-btn");
+  await expect(replyBtn).toBeVisible({ timeout: 15000 });
+  await replyBtn.click();
+  await root.locator(".fb-reply-form .fb-in").fill("a threaded reply");
+  await root.locator(".fb-reply-form button").click();
+
+  // The reply renders in the nested list under the root (folded in via the
+  // reply graph — it targets the parent's URN, not the subject).
+  const nested = root.locator(".fb-replies > li.fb-reply-item");
+  await expect(nested).toContainText("a threaded reply", { timeout: 15000 });
+  // Its author fingerprint badge renders like any other item.
+  await expect(nested.locator("a.fb-fp")).toBeVisible({ timeout: 15000 });
+  // And the reply itself offers a Reply control, so threads can nest deeper.
+  await expect(nested.locator("> .fb-reply .fb-reply-btn")).toBeVisible({ timeout: 15000 });
 });
 
 // 3) OAuth bearer (data-token) path: publish + read back the aggregate.
