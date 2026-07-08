@@ -55,14 +55,17 @@
   }
 
   /** Pull annotations from a `data-read` endpoint (AnnotationPage or array). */
-  async function fetchAnnotations(base, target) {
+  async function fetchAnnotations(base, target, opts = {}) {
     // `cache: "no-store"` bypasses the browser HTTP cache: the collection
     // response carries `Cache-Control: max-age=...`, and a `refresh()` right
     // after `publish()`/`erase()` reuses the identical read URL, so a
     // caching fetch would silently replay the pre-publish snapshot.
+    // An optional `signal` lets callers bound a slow read (the thread second
+    // hop uses it so a stalled hop can't hang forever — ADR 0024).
     const resp = await fetch(readUrl(base, target), {
       headers: { accept: "application/ld+json" },
       cache: "no-store",
+      signal: opts.signal,
     });
     if (!resp.ok) throw new Error(`read failed: ${resp.status}`);
     const doc = await resp.json();
@@ -536,18 +539,37 @@
 
     async refresh() {
       if (!this.readBase || !this.target) return;
+      // A monotonic token so a slow refresh (e.g. its thread second hop) can
+      // never clobber the render of a newer one that already superseded it.
+      const seq = (this._refreshSeq = (this._refreshSeq || 0) + 1);
       try {
-        let anns = await fetchAnnotations(this.readBase, this.target);
-        // With replies opted in, fold in the thread the subject doesn't carry
-        // directly (replies target their parent by URN, not the subject).
-        if (this.repliesEnabled) anns = await this.expandThread(anns);
-        this.annotations = anns;
+        const base = await fetchAnnotations(this.readBase, this.target);
+        if (seq !== this._refreshSeq) return;
         // Ownership detection (ADR 0021): with data-sign in a secure context,
         // items whose creator.id equals this browser identity's issuer id are
         // the visitor's OWN feedback and get a delete affordance.
         this.ownerId = this.signing ? await getOwnIssuerId() : null;
+        if (seq !== this._refreshSeq) return;
+        // Render the subject's own feedback IMMEDIATELY. The threaded second
+        // hop below is a best-effort augmentation — it must never gate the
+        // top-level items from appearing (a slow or unreachable hop would
+        // otherwise blank the list — ADR 0024).
+        this.annotations = base;
         this.renderAggregate();
+        // With replies opted in, fold in the thread the subject aggregate may
+        // not already carry (a widget pointed straight at a feedback server;
+        // a collection `/index` already folds replies in server-side). Re-render
+        // only if the hop actually surfaced something new, to avoid a flicker.
+        if (this.repliesEnabled) {
+          const expanded = await this.expandThread(base);
+          if (seq !== this._refreshSeq) return;
+          if (expanded.length !== this.annotations.length) {
+            this.annotations = expanded;
+            this.renderAggregate();
+          }
+        }
       } catch (e) {
+        if (seq !== this._refreshSeq) return;
         this.setStatus(String(e.message || e));
       }
     }
@@ -575,10 +597,17 @@
       };
       let frontier = ingest(seed);
       const MAX_HOPS = 4;
+      // Bound each hop read: a stalled or unreachable server must not leave the
+      // walk (and the augment re-render) pending indefinitely.
+      const HOP_TIMEOUT_MS = 5000;
+      const timeoutSignal = () =>
+        typeof AbortSignal !== "undefined" && AbortSignal.timeout
+          ? AbortSignal.timeout(HOP_TIMEOUT_MS)
+          : undefined;
       for (let hop = 0; hop < MAX_HOPS && frontier.length; hop++) {
         const pages = await Promise.all(
           frontier.map((pid) =>
-            fetchAnnotations(this.readBase, ANNO_URN_PREFIX + pid).catch(() => [])
+            fetchAnnotations(this.readBase, ANNO_URN_PREFIX + pid, { signal: timeoutSignal() }).catch(() => [])
           )
         );
         frontier = [];
