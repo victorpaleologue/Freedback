@@ -741,7 +741,10 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "fb-reply-btn";
-      btn.textContent = "Reply";
+      // The hooked arrow (↩) reads as "reply" at a glance, matching the
+      // Unicode-glyph icon convention already used elsewhere (× to delete,
+      // ⚠ for issues) rather than pulling in an SVG icon set.
+      btn.textContent = "↩ Reply";
       btn.addEventListener("click", () => {
         const open = wrap.querySelector("form");
         if (open) {
